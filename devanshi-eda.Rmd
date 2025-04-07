@@ -1,0 +1,90 @@
+---
+title: "devanshi-eda"
+output: html_document
+date: "2025-04-07"
+---
+
+```{r include=FALSE}
+library(GEOquery) 
+library(R.utils)
+library(reshape2)
+library(ggplot2)
+library(limma)
+library(dplyr)
+library(tidyr)
+library(DT)
+library(ggplot2)
+library(reshape2)
+
+
+gse_15852 <- getGEO("GSE15852")
+```
+
+```{r echo=FALSE}
+gseset <- gse_15852[[1]]
+
+f = fData(gseset)
+
+p = pData(gseset)
+
+M <- exprs(gseset)
+
+M_log2 <- log2(M)
+
+dim(gseset)
+
+
+df <- melt(M)  
+
+colnames(df) <- c("Gene", "Sample", "Expression")
+
+ggplot(df, aes(x = Sample, y = Expression)) +
+  geom_boxplot(outlier.color = "red", outlier.size = 0.5, outlier.shape = 16) +
+  labs(x = "Samples", y = "Log2-transformed Gene Expression") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+summary(df$Expression)
+
+df$Expression <- log2(df$Expression)
+library(ggplot2)
+ggplot(df, aes(x = Sample, y = Expression)) +
+  geom_boxplot(outlier.color = "red", outlier.size = 0.5, outlier.shape = 16) +
+  labs(x = "Samples", y = "Log2-transformed Expression") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+```
+
+## cancer and non-cancer differentiation
+```{r}
+gseset$Outcome <- ifelse(grepl("Cancer", gseset$title), "Normal", "Cancer")
+table(gseset$Outcome )
+```
+
+## T test with some genes
+```{r}
+boxplot(M_log2[1, ] ~ gseset$Outcome)
+t.test(M_log2[1, ] ~ gseset$Outcome)
+```
+```{r}
+boxplot(M_log2[10, ] ~ gseset$Outcome)
+t.test(M_log2[10, ] ~ gseset$Outcome)
+```
+
+##DE Analysis
+```{r}
+design = model.matrix(~Outcome, data = pData(gseset))
+fit = lmFit(M_log2 , design)
+fit = eBayes(fit)
+
+tT_15852 <- topTable(fit, n = Inf, adjust.method = "BH", sort.by = "P") 
+tT_15852
+
+DT::datatable(round(tT_15852[1:100, ], 2))
+
+ggplot(tT_15852 , aes(x = AveExpr, y = logFC))+
+    geom_point(aes(colour=-log10(P.Value)), alpha=1/3, size=1) +
+    scale_colour_gradient(low="green",high="blue") +
+    ylab("log10 fold change") + xlab("Average expression")
+```
