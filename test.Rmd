@@ -1,0 +1,151 @@
+```{r include=FALSE}
+library(GEOquery) 
+library(R.utils)
+library(reshape2)
+library(ggplot2)
+library(limma)
+library(dplyr)
+library(tidyr)
+gse_15852 <- getGEO("GSE15852")
+```
+
+```{r echo=FALSE}
+gseset <- gse_15852[[1]]
+
+f = fData(gseset)
+
+p = pData(gseset)
+
+M <- exprs(gseset)
+
+M_log2 <- log2(M)
+
+dim(gseset)
+```
+# Determine whether the data needs LOG2 conversion
+```{r}
+library(ggplot2)
+library(reshape2)
+
+df <- melt(M)  
+
+colnames(df) <- c("Gene", "Sample", "Expression")
+
+ggplot(df, aes(x = Sample, y = Expression)) +
+  geom_boxplot(outlier.color = "red", outlier.size = 0.5, outlier.shape = 16) +
+  labs(x = "Samples", y = "Log2-transformed Gene Expression") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+summary(df$Expression)
+
+```
+
+```{r}
+df$Expression <- log2(df$Expression)
+library(ggplot2)
+ggplot(df, aes(x = Sample, y = Expression)) +
+  geom_boxplot(outlier.color = "red", outlier.size = 0.5, outlier.shape = 16) +
+  labs(x = "Samples", y = "Log2-transformed Expression") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+```
+## Distinguish between cancer and non-cancer subjects
+```{r}
+gseset$Outcome <- ifelse(grepl("Cancer", gseset$title), "Normal", "Cancer")
+table(gseset$Outcome )
+```
+## Select some genes and perform a T test
+```{r}
+boxplot(M_log2[1, ] ~ gseset$Outcome)
+t.test(M_log2[1, ] ~ gseset$Outcome)
+```
+```{r}
+boxplot(M_log2[10, ] ~ gseset$Outcome)
+t.test(M_log2[10, ] ~ gseset$Outcome)
+```
+##DE Analysis
+```{r}
+design = model.matrix(~Outcome, data = pData(gseset))
+fit = lmFit(M_log2 , design)
+fit = eBayes(fit)
+
+tT_15852 <- topTable(fit, n = Inf, adjust.method = "BH", sort.by = "P") 
+tT_15852
+library(DT)
+DT::datatable(round(tT_15852[1:100, ], 2))
+```
+
+```{r}
+ggplot(tT_15852 , aes(x = AveExpr, y = logFC))+
+    geom_point(aes(colour=-log10(P.Value)), alpha=1/3, size=1) +
+    scale_colour_gradient(low="blue",high="red") +
+    ylab("log10 fold change") + xlab("Average expression")
+```
+## Top_100
+```{r}
+library(ggplot2)
+library(plotly)
+top100_15852 = tT_15852[1:100,]
+top100_15852$gene_name = rownames(top100_15852)
+p= ggplot(top100_15852, aes(x = AveExpr, y = logFC)) +
+    geom_point(aes(colour = logFC, text = gene_name), alpha = 1/3, size = 1) +
+    scale_colour_gradient(low = "blue", high = "red") +
+    ylab("log2 fold change") + xlab("Average expression")
+
+# Convert to plotly object
+p = ggplotly(p, tooltip = "text")
+p
+```
+
+```{r}
+logFC_threshold <- 2       
+p_value_threshold <- 0.01 
+
+k1 <- (tT_15852$adj.P.Val < p_value_threshold) & (tT_15852$logFC < -logFC_threshold)
+k2 <- (tT_15852$adj.P.Val < p_value_threshold) & (tT_15852$logFC > logFC_threshold)
+
+DEG <- mutate(tT_15852, change = ifelse(k1, "down", ifelse(k2, "up", "stable")))
+
+table(DEG$change)
+
+```
+
+```{r}
+ggplot(data = DEG, 
+            aes(x = logFC, 
+                y = -log10(P.Value))) +
+  geom_point(alpha = 0.4, size = 3.5, 
+             aes(color = change)) +
+  ylab("-log10(Pvalue)")+
+  scale_color_manual(values = c("blue4", "grey", "red3"))+
+  geom_vline(xintercept = c(-logFC, logFC), lty = 4, col = "black", lwd = 0.8) +
+  geom_hline(yintercept = -log10(P.Value), lty = 4, col = "black", lwd = 0.8) +
+  theme_bw()
+```
+```{r}
+library(Biobase)
+library(ggplot2)
+
+gseset$Outcome <- ifelse(grepl("Cancer", gseset$title), "Normal", "Cancer")
+table(gseset$Outcome )
+
+pca <- prcomp(t(M_log2), scale. = TRUE)
+
+pca_df <- data.frame(
+  PC1 = pca$x[, 1],
+  PC2 = pca$x[, 2],
+  Outcome = gseset$Outcome
+)
+
+ggplot(pca_df, aes(x = PC1, y = PC2, color = Outcome)) +
+  geom_point(size = 3) +
+  theme_bw() +
+  labs(title = "PCA Plot", x = "PCA 1", y = "PCA 2")
+
+```
+
+
+
+
