@@ -66,7 +66,7 @@ boxplot(M_log2[10, ] ~ gseset$Outcome)
 t.test(M_log2[10, ] ~ gseset$Outcome)
 ```
 ##DE Analysis
-```{r}
+```{r include=FALSE}
 design = model.matrix(~Outcome, data = pData(gseset))
 fit = lmFit(M_log2 , design)
 fit = eBayes(fit)
@@ -145,7 +145,120 @@ ggplot(pca_df, aes(x = PC1, y = PC2, color = Outcome)) +
   labs(title = "PCA Plot", x = "PCA 1", y = "PCA 2")
 
 ```
+## New 10-April
+```{r}
+pData(gseset)$gradeFactor <- factor(
+  pData(gseset)$`grade:ch1`, 
+  levels = c("normal", "grade 1", "grade 2", "grade 3")
+)
+table(pData(gseset)$gradeFactor)
+```
+
+```{r}
+anova_result <- aov(M_log2[1, ] ~ pData(gseset)$gradeFactor)
+summary(anova_result)
+tukey_result <- TukeyHSD(anova_result)
+print(tukey_result)
+```
+
+```{r}
+anova_result <- aov(M_log2[100, ] ~ pData(gseset)$gradeFactor)
+summary(anova_result)
+tukey_result <- TukeyHSD(anova_result)
+print(tukey_result)
+```
+```{r echo=FALSE}
+significant_genes <- list()
+count <- 0
+significant_indices <- c()
+
+for (i in 1:22283) {
+  # ANOVA Test
+  anova_result <- aov(M_log2[i, ] ~ pData(gseset)$gradeFactor)
+  p_value <- summary(anova_result)[[1]]$"Pr(>F)"[1]
+  
+  if (!is.na(p_value) && p_value < 0.05) {
+    count <- count + 1
+    # TukeyHSD post mortem
+    tukey_result <- TukeyHSD(anova_result)
+    tukey_df <- as.data.frame(tukey_result$`pData(gseset)$gradeFactor`)
+  
+    comparisons <- c("grade 1-normal", "grade 2-normal", "grade 3-normal")
+    if (all(comparisons %in% rownames(tukey_df)) && 
+        all(tukey_df[comparisons, "p adj"] < 0.05)) {
+      significant_genes[[rownames(M_log2)[i]]] <- tukey_df[comparisons, ]
+      significant_indices <- c(significant_indices, i)  
+    }
+  }
+}
+M_log2_ANOVA <- M_log2[significant_indices, ]
+cat("Dimension of M_log2_ANOVA:", dim(M_log2_ANOVA), "\n")
+significant_gene_names <- rownames(M_log2)[significant_indices]
+```
 
 
+## Standardize M，It didn't work out very well
+```{r}
+library(ggplot2)
+library(reshape2)
 
+M_zscore <- t(scale(t(M_log2)))
+df <- melt(M_zscore)  
+
+colnames(df) <- c("Gene", "Sample", "Expression")
+
+ggplot(df, aes(x = Sample, y = Expression)) +
+  geom_boxplot(outlier.color = "red", outlier.size = 0.5, outlier.shape = 16) +
+  labs(x = "Samples", y = "Log2-transformed Gene Expression") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+```{r}
+library(Biobase)
+library(ggplot2)
+
+gseset$Outcome <- ifelse(grepl("Cancer", gseset$title), "Normal", "Cancer")
+table(gseset$Outcome )
+
+pca <- prcomp(t(M_log2_ANOVA), scale. = TRUE)
+
+pca_df <- data.frame(
+  PC1 = pca$x[, 1],
+  PC2 = pca$x[, 2],
+  Outcome = gseset$Outcome
+)
+
+ggplot(pca_df, aes(x = PC1, y = PC2, color = Outcome)) +
+  geom_point(size = 3) +
+  theme_bw() +
+  labs(title = "PCA Plot", x = "PCA 1", y = "PCA 2")
+```
+```{r}
+set.seed(123)  
+n <- nrow(data)
+train_indices <- sample(seq_len(n), size = round(0.8 * n))
+train_data <- data[train_indices, ]
+test_data <- data[-train_indices, ]
+```
+
+```{r}
+library(caret)
+library(e1071)  
+set.seed(123)
+trControl <- trainControl(method = "cv", number = 5)
+
+svm_model <- train(
+  Outcome ~ .,
+  data = train_data,                   
+  method = "svmLinear",                
+  trControl = trControl,
+  tuneGrid = data.frame(C = c(0.1, 1, 10)) 
+)
+print(svm_model)
+predictions <- predict(svm_model, newdata = test_data)
+conf_mat <- confusionMatrix(predictions, test_data$Outcome)
+print(conf_mat)
+
+```
 
