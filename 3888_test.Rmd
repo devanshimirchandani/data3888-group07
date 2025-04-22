@@ -1,0 +1,50 @@
+```{r include=FALSE}
+library(GEOquery) 
+library(R.utils)
+library(reshape2)
+library(ggplot2)
+library(limma)
+library(dplyr)
+library(tidyr)
+gse15852 <- getGEO("GSE15852")
+```
+
+```{r}
+gseset <- gse15852[[1]]
+
+f = fData(gseset)
+
+p = pData(gseset)
+
+M <- exprs(gseset)
+
+M_log2 <- log2(M)
+
+dim(gseset)
+```
+
+```{r}
+library(Biobase)
+library(ggplot2)
+
+gseset$Outcome <- ifelse(grepl("Cancer", gseset$title), "Normal", "Cancer")
+table(gseset$Outcome )
+
+pca <- prcomp(t(M_log2), scale. = TRUE)
+
+pca_df <- data.frame(
+  PC1 = pca$x[, 1],
+  PC2 = pca$x[, 2],
+  Outcome = gseset$Outcome
+)
+
+ggplot(pca_df, aes(x = PC1, y = PC2, color = Outcome)) +
+  geom_point(size = 3) +
+  theme_bw() +
+  labs(title = "PCA Plot", x = "PCA 1", y = "PCA 2")
+
+```
+```{r}
+
+```
+
