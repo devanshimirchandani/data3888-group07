@@ -1,0 +1,495 @@
+---
+title: "combine"
+output: html_document
+date: "2025-04-17"
+---
+
+```{r}
+library(GEOquery) 
+library(R.utils)
+library(reshape2)
+library(ggplot2)
+library(limma)
+library(dplyr)
+
+```
+
+```{r}
+gse <- getGEO("GSE10810")
+gse10810 <- gse[[1]]
+
+gse <- getGEO("GSE17907")
+gse17907 <- gse[[1]]
+
+gse <- getGEO("GSE20711")
+gse20711 <- gse[[1]]
+
+gse <- getGEO("GSE42568")
+gse42568 <- gse[[1]]
+
+gse <- getGEO("GSE61304")
+gse61304  <- gse[[1]]
+
+gse <- getGEO("GSE15852")
+gse15852  <- gse[[1]]
+```
+
+```{r}
+pData(gse10810) # characteristics_ch1.3
+pData(gse17907) # grade sbr:ch1
+pData(gse20711) # characteristics_ch1.3
+pData(gse42568) # characteristics_ch1.4
+pData(gse61304) # characteristics_ch1.2
+pData(gse15852) # characteristics_ch1.2
+```
+```{r}
+dim(exprs(gse10810))
+dim(exprs(gse17907))
+
+dim(exprs(gse15852))
+```
+```{r}
+# merged
+dim(exprs(gse20711))
+dim(exprs(gse42568))
+dim(exprs(gse61304))
+
+pData(gse20711) # characteristics_ch1.3
+pData(gse42568) # characteristics_ch1.4
+pData(gse61304) # characteristics_ch1.2
+```
+
+
+```{r}
+# Function to extract and standardize grade
+standardize_grade <- function(grades, pattern, replacements, remove_na = TRUE) {
+  grades <- tolower(grades)
+  for (i in seq_along(pattern)) {
+    grades <- gsub(pattern[i], replacements[i], grades)
+  }
+  grades <- gsub(".*(\\b[0-3]\\b).*", "\\1", grades)  # Extract grade number if embedded
+  grades[!grades %in% c("0", "1", "2", "3")] <- NA     # Drop anything unexpected
+  if (remove_na) {
+    grades <- as.numeric(grades)
+  }
+  return(grades)
+}
+
+### GSE10810
+pdata10810 <- pData(gse10810)
+grades10810 <- pdata10810$characteristics_ch1.3
+# Patterns to handle: "grade: 0", "grade: i", "grade: ii", "grade: iii"
+pdata10810$grade <- standardize_grade(
+  grades10810,
+  c("grade: 0", "grade: i\\b", "grade: ii\\b", "grade: iii\\b"),
+  c("0", "1", "2", "3")
+)
+pdata10810 <- pdata10810[!is.na(pdata10810$grade), ]
+
+### GSE17907
+pdata17907 <- pData(gse17907)
+grades17907 <- pdata17907$`grade sbr:ch1`
+pdata17907$grade <- standardize_grade(
+  grades17907,
+  c("--"),
+  c("0")
+)
+pdata17907 <- pdata17907[!is.na(pdata17907$grade), ]
+
+### GSE20711
+pdata20711 <- pData(gse20711)
+grades20711 <- pdata20711$characteristics_ch1.3
+pdata20711$grade <- standardize_grade(
+  grades20711,
+  c("grade: na", "grade: "),
+  c(NA, "")
+)
+pdata20711 <- pdata20711[!is.na(pdata20711$grade), ]
+
+### GSE42568
+pdata42568 <- pData(gse42568)
+grades42568 <- pdata42568$characteristics_ch1.4
+pdata42568$grade <- standardize_grade(
+  grades42568,
+  c("grade: na", "grade: "),
+  c(NA, "")
+)
+pdata42568 <- pdata42568[!is.na(pdata42568$grade), ]
+
+### GSE61304
+pdata61304 <- pData(gse61304)
+grades61304 <- pdata61304$`characteristics_ch1.2`
+pdata61304$grade <- standardize_grade(
+  grades61304,
+  c("tumor grade: na", "tumor grade: g1", "tumor grade: g2", "tumor grade: g3"),
+  c(NA, "1", "2", "3")
+)
+pdata61304 <- pdata61304[!is.na(pdata61304$grade), ]
+
+### GSE15852
+pdata15852 <- pData(gse15852)
+grades15852 <- pdata15852$`characteristics_ch1.2`
+pdata15852$grade <- standardize_grade(
+  grades15852,
+  c("grade: normal", "grade: grade 1", "grade: grade 2", "grade: grade 3"),
+  c("0", "1", "2", "3")
+)
+pdata15852 <- pdata15852[!is.na(pdata15852$grade), ]
+
+```
+
+```{r}
+pdata10810
+pdata17907
+pdata20711
+pdata42568
+pdata61304
+pdata15852
+
+```
+
+
+```{r}
+library(Biobase)
+library(dplyr)
+
+# 1. Expression sets
+expr_list <- list(
+
+  gse10810 = exprs(gse10810),
+  gse17907 = exprs(gse17907),
+  gse20711 = exprs(gse20711),
+  gse42568 = exprs(gse42568),
+  gse61304 = exprs(gse61304)
+)
+
+# 2. Phenotype sets
+pdata_list <- list(
+
+  pdata10810,
+  pdata17907,
+  pdata20711,
+  pdata42568,
+  pdata61304
+
+)
+
+# 3. Fix phenotype rownames using geo_accession if present
+pdata_list <- lapply(pdata_list, function(p) {
+  if ("geo_accession" %in% colnames(p)) {
+    rownames(p) <- p$geo_accession
+  }
+  return(p)
+})
+
+# Reassign corrected pdata
+
+pdata10810 <- pdata_list[[1]]
+pdata17907 <- pdata_list[[2]]
+pdata20711 <- pdata_list[[3]]
+pdata42568 <- pdata_list[[4]]
+pdata61304 <- pdata_list[[5]]
+
+
+# 4. Grade list extraction with matching sample names
+pheno_list <- list(
+  gse10810 = pdata10810,
+  gse17907 = pdata17907,
+  gse20711 = pdata20711,
+  gse42568 = pdata42568,
+  gse61304 = pdata61304
+  
+
+)
+
+grade_list <- Map(function(expr, pheno) {
+  sample_names <- colnames(expr)
+  matched_pheno <- pheno[sample_names, , drop = FALSE]
+  grades <- matched_pheno$grade
+  names(grades) <- sample_names
+  grades
+}, expr_list, pheno_list)
+
+# 5. Combine all grades into one vector and clean sample names
+all_grades <- do.call(c, grade_list)
+names(all_grades) <- sub(".*\\.", "", names(all_grades))  # Strip prefix
+
+# 6. Merge all expression sets by rownames (gene names)
+expr_dfs <- lapply(expr_list, function(mat) {
+  df <- as.data.frame(mat)
+  df$gene <- rownames(mat)
+  df
+})
+
+merged_expr <- Reduce(function(x, y) full_join(x, y, by = "gene"), expr_dfs)
+rownames(merged_expr) <- merged_expr$gene
+merged_expr$gene <- NULL
+
+# 7. Match grades to columns in merged_expr
+all_samples <- colnames(merged_expr)
+matched_grades <- all_grades[all_samples]
+
+# 8. Build final metadata
+metadata <- data.frame(
+  sample = names(matched_grades),
+  grade = matched_grades,
+  stringsAsFactors = FALSE
+)
+
+# 9. Final alignment check
+stopifnot(all(metadata$sample == colnames(merged_expr)))
+
+# 🧼 (Optional) Drop NA grades
+# merged_expr <- merged_expr[, !is.na(metadata$grade)]
+# metadata <- metadata[!is.na(metadata$grade), ]
+
+metadata
+merged_expr
+```
+
+```{r}
+# 🧼 Remove NA grades from metadata
+metadata <- metadata[!is.na(metadata$grade), ]
+metadata
+# 🧼 Remove corresponding columns from merged_expr
+merged_expr <- merged_expr[, metadata$sample]
+anyNA(merged_expr)
+sum(is.na(merged_expr))
+merged_expr <- merged_expr[complete.cases(merged_expr), ]
+merged_expr
+```
+
+```{r}
+set.seed(123)  # For reproducibility
+
+# Split indices
+train_idx <- sample(seq_len(ncol(merged_expr)), size = 0.8 * ncol(merged_expr))
+
+# Create training and test sets
+expr_train <- merged_expr[, train_idx]
+expr_test <- merged_expr[, -train_idx]
+
+metadata_train <- metadata[metadata$sample %in% colnames(expr_train), ]
+metadata_test <- metadata[metadata$sample %in% colnames(expr_test), ]
+
+```
+
+```{r}
+# Transpose for scaling (samples as rows)
+expr_train_scaled <- t(scale(t(expr_train)))
+
+```
+
+```{r}
+pca_res <- prcomp(t(expr_train_scaled), center = TRUE, scale. = FALSE)
+
+```
+
+```{r}
+library(ggplot2)
+
+# Create PCA data frame with grade info
+pca_df <- as.data.frame(pca_res$x)
+pca_df$grade <- as.factor(metadata_train$grade[match(rownames(pca_df), metadata_train$sample)])
+
+# Plot PC1 vs PC2
+ggplot(pca_df, aes(x = PC1, y = PC2, color = grade)) +
+  geom_point(size = 3, alpha = 0.8) +
+  labs(title = "PCA: PC1 vs PC2") +
+  theme_minimal()
+
+# Plot PC2 vs PC3
+ggplot(pca_df, aes(x = PC2, y = PC3, color = grade)) +
+  geom_point(size = 3, alpha = 0.8) +
+  labs(title = "PCA: PC2 vs PC3") +
+  theme_minimal()
+
+# Plot PC3 vs PC4
+ggplot(pca_df, aes(x = PC3, y = PC4, color = grade)) +
+  geom_point(size = 3, alpha = 0.8) +
+  labs(title = "PCA: PC3 vs PC4") +
+  theme_minimal()
+
+```
+
+
+
+```{r}
+library(affy)
+library(sva)
+library(GEOquery)
+library(annotate)
+library(hgu133plus2.db)  # Modify if datasets use different platforms
+
+```
+
+```{r}
+tar_dir <- "C:/Users/tsmit/Documents/GEO_tarfiles"
+extract_dir <- file.path(tar_dir, "extracted")
+dir.create(extract_dir, showWarnings = FALSE)
+
+# Get all .tar files
+tar_files <- list.files(tar_dir, pattern = "\\.tar$", full.names = TRUE)
+
+# Extract and read CEL files
+read_and_rma <- function(tar_file, extract_dir) {
+  dataset_name <- tools::file_path_sans_ext(basename(tar_file))
+  cel_folder <- file.path(extract_dir, dataset_name)
+  dir.create(cel_folder, showWarnings = FALSE)
+  
+  # Untar into a unique directory
+  untar(tar_file, exdir = cel_folder)
+  
+  # Read CEL files
+  affy_data <- ReadAffy(celfile.path = cel_folder)
+  eset <- rma(affy_data)
+  return(eset)
+}
+
+# Process all datasets
+eset_list <- lapply(tar_files, read_and_rma, extract_dir = extract_dir)
+
+# Extract and clean grade metadata for each dataset
+standardize_grade <- function(grades, pattern, replacements, remove_na = TRUE) {
+  grades <- tolower(grades)
+  for (i in seq_along(pattern)) {
+    grades <- gsub(pattern[i], replacements[i], grades)
+  }
+  grades <- gsub(".*(\\b[0-3]\\b).*", "\\1", grades)
+  grades[!grades %in% c("0", "1", "2", "3")] <- NA
+  if (remove_na) {
+    grades <- as.numeric(grades)
+  }
+  return(grades)
+}
+
+extract_grades <- function(gse) {
+  pdata <- pData(gse)
+  if (grepl("GSE10810", gse@annotation)) {
+    grades <- pdata$characteristics_ch1.3
+    standardize_grade(grades, c("grade: 0", "grade: i\\b", "grade: ii\\b", "grade: iii\\b"), c("0", "1", "2", "3"))
+  } else if (grepl("GSE17907", gse@annotation)) {
+    grades <- pdata$`grade sbr:ch1`
+    standardize_grade(grades, c("--"), c("0"))
+  } else if (grepl("GSE20711", gse@annotation)) {
+    grades <- pdata$characteristics_ch1.3
+    standardize_grade(grades, c("grade: na", "grade: "), c(NA, ""))
+  } else if (grepl("GSE42568", gse@annotation)) {
+    grades <- pdata$characteristics_ch1.4
+    standardize_grade(grades, c("grade: na", "grade: "), c(NA, ""))
+  } else if (grepl("GSE61304", gse@annotation)) {
+    grades <- pdata$`characteristics_ch1.2`
+    standardize_grade(grades, c("tumor grade: na", "tumor grade: g1", "tumor grade: g2", "tumor grade: g3"),
+                      c(NA, "1", "2", "3"))
+  } else {
+    rep(NA, nrow(pdata))
+  }
+}
+
+
+# Collapse probe-level expression to gene-level
+collapse_to_gene_level <- function(eset) {
+  exprs_data <- exprs(eset)
+  probes <- rownames(exprs_data)
+  gene_symbols <- getSYMBOL(probes, "hgu133plus2.db")
+  valid <- which(!is.na(gene_symbols))
+  exprs_data <- exprs_data[valid, ]
+  gene_symbols <- gene_symbols[valid]
+  exprs_by_gene <- aggregate(exprs_data, by = list(Gene = gene_symbols), FUN = mean)
+  rownames(exprs_by_gene) <- exprs_by_gene$Gene
+  exprs_by_gene <- exprs_by_gene[, -1]
+  return(exprs_by_gene)
+}
+
+# Apply collapsing
+gene_expr_list <- lapply(eset_list, collapse_to_gene_level)
+
+# Extract grade metadata from each eset
+grade_list <- lapply(eset_list, extract_grades)
+
+# Match order to merged_list columns
+sample_ids <- unlist(lapply(merged_list, colnames))
+grades_vector <- unlist(grade_list)
+
+# Match lengths and samples
+grades_vector <- grades_vector[sample_ids %in% colnames(merged_exprs)]
+grades_vector <- grades_vector[match(colnames(merged_exprs), sample_ids)]
+
+# Create phenotype data with grade
+pheno_df <- data.frame(sample = colnames(merged_exprs), grade = grades_vector, batch = batch)
+rownames(pheno_df) <- pheno_df$sample
+
+
+# Merge datasets on common genes
+common_genes <- Reduce(intersect, lapply(gene_expr_list, rownames))
+merged_list <- lapply(gene_expr_list, function(x) x[common_genes, ])
+merged_exprs <- do.call(cbind, merged_list)
+
+# Batch vector
+batch <- rep(seq_along(gene_expr_list), sapply(merged_list, ncol))
+
+# ComBat batch correction
+combat_exprs <- ComBat(dat = merged_exprs, batch = batch)
+```
+
+
+```{r}
+# PCA
+pca_result <- prcomp(t(combat_exprs), scale. = TRUE)
+plot(pca_result$x[, 1:2], col = batch, pch = 19, 
+     main = "PCA After ComBat Batch Correction")
+legend("topright", legend = basename(tools::file_path_sans_ext(tar_files)), col = 1:length(tar_files), pch = 19)
+plot(pca_result$x[, 2:3], col = batch, pch = 19, 
+     main = "PCA After ComBat Batch Correction")
+legend("topright", legend = basename(tools::file_path_sans_ext(tar_files)), col = 1:length(tar_files), pch = 19)
+```
+
+```{r}
+pheno_df$grade <- metadata$grade
+table(pheno_df$grade, useNA = "ifany")
+
+
+# Make sure pheno_df has no NAs in grade and is aligned
+valid_samples <- !is.na(pheno_df$grade)
+grade_vec <- pheno_df$grade[valid_samples]
+expr_vec <- combat_exprs[1, valid_samples]
+
+# Check alignment (optional sanity check)
+stopifnot(length(grade_vec) == length(expr_vec))
+
+# Plot
+boxplot(expr_vec ~ grade_vec,
+        main = "Expression of Gene 1 by Tumor Grade",
+        xlab = "Tumor Grade",
+        ylab = "Expression (RMA, Batch Corrected)",
+        col = c("#E0BBE4", "#957DAD", "#D291BC", "#FEC8D8"))
+pheno_df <- pheno_df[valid_samples, ]
+combat_exprs <- combat_exprs[, valid_samples]
+
+```
+
+
+```{r}
+# start from now!!!!
+
+pca <- prcomp(t(combat_exprs), scale. = TRUE)
+```
+
+
+```{r}
+# 3. Plot PCA colored by grade
+library(ggplot2)
+pca_df <- data.frame(
+  PC1 = pca$x[, 3],
+  PC2 = pca$x[, 4],
+  grade = factor(pheno_df$grade)
+)
+
+ggplot(pca_df, aes(x = PC1, y = PC2, color = grade)) +
+  geom_point(size = 2, alpha = 0.7) +
+  theme_minimal() +
+  labs(title = "PCA of Batch-corrected Expression Data",
+       x = "PC1", y = "PC2") +
+  scale_color_brewer(palette = "Set1")
+```
+
