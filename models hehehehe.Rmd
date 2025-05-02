@@ -1,0 +1,329 @@
+---
+title: "crasout"
+author: "T"
+date: "2025-04-27"
+output: html_document
+runtime: shiny
+---
+
+```{r include=FALSE}
+library(GEOquery) 
+library(R.utils)
+library(reshape2)
+library(ggplot2)
+library(limma)
+library(dplyr)
+library(tidyr)
+library(randomForest)
+library(class)
+library(e1071)    # svm
+library(caret)  
+library(pROC)
+
+```
+
+```{r echo=FALSE}
+gse_15852 <- getGEO("GSE15852")
+
+gseset <- gse_15852[[1]]
+
+f = fData(gseset)
+
+p = pData(gseset)
+
+M <- exprs(gseset)
+
+M_log2 <- log2(M) + 1
+
+dim(gseset)
+```
+# Try and figure out PCA separation
+```{r}
+library(Biobase)
+library(ggplot2)
+
+gseset$Outcome <- ifelse(grepl("Cancer", gseset$title), "Cancer", "Normal")
+table(gseset$Outcome )
+
+pca <- prcomp(t(M_log2), scale. = TRUE)
+
+pca_df <- data.frame(
+  PC1 = pca$x[, 1],
+  PC2 = pca$x[, 2],
+  Outcome = gseset$Outcome
+)
+
+ggplot(pca_df, aes(x = PC1, y = PC2, color = Outcome)) +
+  geom_point(size = 3) +
+  theme_bw() +
+  labs(title = "PCA Plot", x = "PCA 1", y = "PCA 2")
+```
+
+# First identify the significant genes and then make the pca plot
+```{r}
+# Based on limma, the differentially expressed genes of "Cancer vs Normal" were screened out, and PCA was performed on the expression matrices of these genes
+# sig_genes are all in the comparison of "Cancer vs Normal"
+
+library(limma)
+library(ggplot2)
+
+# 1. Create Outcome from 'characteristics_ch1.2'
+pd <- pData(gseset)
+
+# Extract grade info
+pd$Grade <- sub("grade: ", "", pd$characteristics_ch1.2)
+pd$Grade <- factor(pd$Grade)
+pd$Grade <- factor(pd$Grade, levels = c("normal", "grade 1", "grade 2", "grade 3"), 
+                   labels = c("Normal", "Grade1", "Grade2", "Grade3"))
+
+# Check unique grades
+table(pd$Grade)
+
+# 2. Build design matrix for grades
+design <- model.matrix(~ 0 + Grade, data = pd)
+colnames(design) <- levels(pd$Grade)
+
+# 3. Fit the model
+fit <- lmFit(M_log2, design)
+
+# 4. Make contrasts between grades
+# For example, Grade1 vs Normal, Grade2 vs Normal, Grade3 vs Normal
+cont <- makeContrasts(
+  Grade1 - Normal,
+  Grade2 - Normal,
+  Grade3 - Normal,
+  levels = design
+)
+
+fit2 <- contrasts.fit(fit, cont)
+fit2 <- eBayes(fit2)
+
+# 5. Select significant genes across comparisons (you can pick one contrast at a time)
+# Let's pick Grade1 vs Normal as an example first
+tt <- topTable(fit2, coef = "Grade1 - Normal", number = Inf, adjust.method = "BH", p.value = 0.05)
+sig_genes <- rownames(tt)
+
+# 6. PCA on the significant genes
+pca_sig <- prcomp(t(M_log2[sig_genes, , drop=FALSE]), 
+                  center=TRUE, scale.=TRUE)
+
+var_exp <- pca_sig$sdev^2 / sum(pca_sig$sdev^2)
+pct1 <- round(var_exp[1]*100,1)
+pct2 <- round(var_exp[2]*100,1)
+
+# 7. Create dataframe for plotting
+pca_df2 <- data.frame(
+  PC1   = pca_sig$x[,1],
+  PC2   = pca_sig$x[,2],
+  Grade = pd$Grade
+)
+
+# 8. Plot
+ggplot(pca_df2, aes(PC1, PC2, color=Grade)) +
+  geom_point(size=3) +
+  theme_bw() +
+  labs(
+    title = "PCA on Genes Selected for Grades",
+    x = paste0("PC1 (", pct1, "%)"),
+    y = paste0("PC2 (", pct2, "%)")
+  )
+
+```
+```{r}
+set.seed(42)  # For reproducibility
+
+# Remove NAs and ensure expression and phenotype are aligned
+valid_samples <- which(!is.na(pd$Grade))
+M_log2 <- M_log2[, valid_samples]
+pd <- pd[valid_samples, ]
+
+# Split indices
+n <- ncol(M_log2)
+train_idx <- sample(1:n, size = 0.8 * n)
+test_idx <- setdiff(1:n, train_idx)
+
+# Training and testing sets
+M_train <- M_log2[, train_idx]
+pd_train <- pd[train_idx, ]
+
+M_test <- M_log2[, test_idx]
+pd_test <- pd[test_idx, ]
+```
+
+# starts here
+
+
+
+
+```{r}
+# Design matrix (only training samples)
+design <- model.matrix(~ 0 + Grade, data = pd_train)
+colnames(design) <- levels(pd_train$Grade)
+
+# Fit model
+fit <- lmFit(M_train, design)
+
+# Contrasts: Grade1 vs Normal, etc.
+cont <- makeContrasts(
+  Grade1 - Normal,
+  Grade2 - Normal,
+  Grade3 - Normal,
+  levels = design
+)
+fit2 <- contrasts.fit(fit, cont)
+fit2 <- eBayes(fit2)
+
+# Pick DE genes for Grade1 vs Normal
+tt <- topTable(fit2, coef = "Grade1 - Normal", number = Inf, adjust.method = "BH", p.value = 0.05)
+sig_genes <- rownames(tt)
+
+# PCA on training data
+pca_train <- prcomp(t(M_train[sig_genes, , drop = FALSE]), center = TRUE, scale. = TRUE)
+pca_test  <- predict(pca_train, newdata = t(M_test[sig_genes, , drop = FALSE]))
+
+# Combine for plotting
+pca_df_train <- data.frame(
+  PC1 = pca_train$x[, 1],
+  PC2 = pca_train$x[, 2],
+  Grade = pd_train$Grade,
+  Set = "Train"
+)
+
+pca_df_test <- data.frame(
+  PC1 = pca_test[, 1],
+  PC2 = pca_test[, 2],
+  Grade = pd_test$Grade,
+  Set = "Test"
+)
+
+pca_df_all <- rbind(pca_df_train, pca_df_test)
+
+# Variance explained
+var_exp <- pca_train$sdev^2 / sum(pca_train$sdev^2)
+pct1 <- round(var_exp[1] * 100, 1)
+pct2 <- round(var_exp[2] * 100, 1)
+
+ggplot(pca_df_all, aes(PC1, PC2, color = Grade, shape = Set)) +
+  geom_point(size = 3) +
+  theme_bw() +
+  labs(
+    title = "PCA on Grade1 vs Normal DE Genes (Train/Test Split)",
+    x = paste0("PC1 (", pct1, "%)"),
+    y = paste0("PC2 (", pct2, "%)")
+  )
+
+```
+
+
+```{r}
+# 1. Design matrix for training data
+design <- model.matrix(~ 0 + Grade, data = pd)
+colnames(design) <- levels(pd$Grade)
+
+# 2. Fit limma model on training data
+fit_train <- lmFit(M_log2, design)
+
+# 3. Contrasts (e.g., Grade1 vs Normal)
+cont <- makeContrasts(
+  Grade1 - Normal,
+  Grade2 - Normal,
+  Grade3 - Normal,
+  levels = design
+)
+
+fit2_train <- contrasts.fit(fit_train, cont)
+fit2_train <- eBayes(fit2_train)
+
+# 4. Select significant genes for a contrast
+tt1 <- topTable(fit2_train, coef = "Grade1 - Normal", number = Inf, p.value = 0.05)
+tt2 <- topTable(fit2_train, coef = "Grade2 - Normal", number = Inf, p.value = 0.05)
+tt3 <- topTable(fit2_train, coef = "Grade3 - Normal", number = Inf, p.value = 0.05)
+
+# Combine significant gene sets
+sig_genes <- unique(c(rownames(tt1), rownames(tt2), rownames(tt3)))
+
+# Sanity check
+length(sig_genes)
+
+```
+
+```{r}
+# Transpose expression matrix to get samples as rows
+X <- t(M_log2[sig_genes, , drop = FALSE])  
+
+# Use only training labels
+y <- pd$Grade
+# Set up cross-validation
+train_control <- trainControl(method = "cv", number = 10)
+
+# Train Random Forest model
+rf_model <- train(
+  x = X, 
+  y = y, 
+  method = "rf",
+  trControl = train_control
+)
+
+# Print model summary
+print(rf_model)
+```
+
+```{r}
+# Prepare test set with same sig_genes
+X_test <- t(M_test[sig_genes, , drop = FALSE])
+y_test <- pd_test$Grade
+
+# Predict on test data
+pred <- predict(rf_model, X_test)
+
+# Confusion Matrix and derived metrics
+conf <- confusionMatrix(pred, y_test)
+print(conf)
+
+# Extract confusion matrix metrics
+accuracy <- conf$overall['Accuracy']
+kappa <- conf$overall['Kappa']
+class_metrics <- conf$byClass[, c("Precision", "Recall", "F1")]
+
+print(paste("Accuracy:", round(accuracy, 4)))
+print(paste("Kappa:", round(kappa, 4)))
+print(class_metrics)
+
+```
+
+
+```{r}
+# KNN model
+knn_model <- train(
+  x = X, 
+  y = y, 
+  method = "knn",
+  trControl = train_control,
+  tuneLength = 10  # Try 10 different k values
+)
+
+print(knn_model)
+
+```
+
+```{r}
+pred <- predict(knn_model, X_test)
+
+# Confusion Matrix and derived metrics
+conf <- confusionMatrix(pred, y_test)
+print(conf)
+
+# Extract confusion matrix metrics
+accuracy <- conf$overall['Accuracy']
+kappa <- conf$overall['Kappa']
+class_metrics <- conf$byClass[, c("Precision", "Recall", "F1")]
+
+print(paste("Accuracy:", round(accuracy, 4)))
+print(paste("Kappa:", round(kappa, 4)))
+print(class_metrics)
+```
+
+
+
+
+
