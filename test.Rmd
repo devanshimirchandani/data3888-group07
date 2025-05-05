@@ -102,7 +102,6 @@ res_trend <- topTable(
 )
 
 sig_genes <- rownames(subset(res_trend, adj.P.Val < 0.05 & abs(logFC) > 1))
-
 print(sig_genes)
 ```
 
@@ -118,47 +117,7 @@ y_test  <- labels_test
 
 trctrl <- trainControl(
   method          = "cv",
-  number          = 5,
-  classProbs      = TRUE,
-  summaryFunction = multiClassSummary,
-  savePredictions = "final"
-)
-
-set.seed(123)
-svm_mod <- train(
-  x          = x_train,
-  y          = y_train,
-  method     = "svmLinear", 
-  trControl  = trctrl,
-  probability = TRUE      
-)
-
-
-pred_test <- predict(svm_mod, newdata = x_test)
-
-cm <- confusionMatrix(pred_test, y_test)
-
-acc_test   <- cm$overall["Accuracy"]
-kappa_test <- cm$overall["Kappa"]
-
-cat("Test set Accuracy:", round(acc_test, 3), "\n")
-cat("Test set Kappa:   ", round(kappa_test, 3), "\n")
-print(cm$table)
-```
-
-```{r warning=FALSE}
-library(caret)
-library(MLmetrics)
-
-x_train <- t(expr_train[sig_genes, , drop = FALSE])
-x_test  <- t(expr_test [sig_genes, , drop = FALSE])
-
-y_train <- labels_train
-y_test  <- labels_test
-
-trctrl <- trainControl(
-  method          = "cv",
-  number          = 10,               
+  number          = 5,               
   classProbs      = TRUE,
   summaryFunction = multiClassSummary,
   savePredictions = "final"
@@ -183,6 +142,7 @@ print(cm$table)
 
 ```
 ## Each comparison generates a batch of genes, which have significant expression differences between that group and the normal group
+## grade.1/2/3 has changed compared to normal
 ```{r}
 labels_factor <- factor(labels_train, levels = c("normal", "grade.1", "grade.2", "grade.3"))
 design_group <- model.matrix(~ 0 + labels_factor)
@@ -212,7 +172,6 @@ sig_g2 <- rownames(subset(res_g2, adj.P.Val < 0.05 & abs(logFC) > 1))
 sig_g3 <- rownames(subset(res_g3, adj.P.Val < 0.05 & abs(logFC) > 1))
 
 sig_all <- unique(c(sig_g1, sig_g2, sig_g3))
-
 ```
 
 ```{r warning=FALSE}
@@ -227,7 +186,7 @@ y_test  <- labels_test
 
 trctrl <- trainControl(
   method          = "cv",
-  number          = 10,               
+  number          = 5,               
   classProbs      = TRUE,
   summaryFunction = multiClassSummary,
   savePredictions = "final"
@@ -266,4 +225,163 @@ results_df <- data.frame(
 print(results_df)
 
 ```
+```{r}
+expr_pca <- t(expr_train[sig_all , , drop = FALSE])  
 
+pca_res <- prcomp(expr_pca, scale. = TRUE)
+
+pca_df <- data.frame(
+  PC1 = pca_res$x[, 1],
+  PC2 = pca_res$x[, 2],
+  Grade = labels_train
+)
+library(ggplot2)
+
+ggplot(pca_df, aes(x = PC1, y = PC2, color = Grade)) +
+  geom_point(size = 3, alpha = 0.8) +
+  theme_minimal() +
+  labs(title = "PCA of Samples (by Grade)",
+       x = paste0("PC1 (", round(summary(pca_res)$importance[2,1]*100, 1), "% variance)"),
+       y = paste0("PC2 (", round(summary(pca_res)$importance[2,2]*100, 1), "% variance)")) +
+  theme(text = element_text(size = 12))
+
+```
+
+## Find the key genes that can distinguish the four groups of normal, grade.1, grade.2 and grade.3
+```{r}
+# we convert the grouping labels of the samples (such as normal, grade.1, grade.2, grade.3) into factors and create a corresponding design matrix for the subsequent difference analysis. Next, we used lmFit and eBayes to fit the linear model and conduct statistical tests.
+
+labels_factor <- factor(labels_train, levels = c("normal", "grade.1", "grade.2", "grade.3"))
+design <- model.matrix(~ 0 + labels_factor)
+colnames(design) <- levels(labels_factor)
+
+fit <- lmFit(expr_train, design)
+
+fit <- eBayes(fit)
+
+res_anova <- topTable(fit, number = Inf, adjust.method = "BH")
+
+sig_genes_1 <- rownames(subset(res_anova, adj.P.Val < 0.05))
+```
+
+```{r}
+#calculated the average expression level of each gene in the four groups and identified the genes (sig_genes_strong) whose expression level differences among these groups were greater than 1. These genes are not only significant but also have strong expression changes
+group_means <- sapply(levels(labels_factor), function(lv) {
+  rowMeans(expr_train[, labels_train == lv, drop = FALSE])
+})
+
+expr_diff <- apply(group_means, 1, function(x) max(x) - min(x))
+
+sig_genes_strong <- sig_genes_1[expr_diff[sig_genes_1] > 1]
+
+```
+
+```{r warning=FALSE}
+library(caret)
+library(MLmetrics)
+
+x_train <- t(expr_train[sig_genes_strong, , drop = FALSE])
+x_test  <- t(expr_test [sig_genes_strong, , drop = FALSE])
+
+y_train <- labels_train
+y_test  <- labels_test
+
+trctrl <- trainControl(
+  method          = "cv",
+  number          = 5,               
+  classProbs      = TRUE,
+  summaryFunction = multiClassSummary,
+  savePredictions = "final"
+)
+
+set.seed(123)
+svm_mod <- train(
+  x          = x_train,
+  y          = y_train,
+  method     = "svmLinear",
+  trControl  = trctrl
+)
+
+pred_test <- predict(svm_mod, newdata = x_test)
+cm <- confusionMatrix(pred_test, y_test)
+acc_test   <- cm$overall["Accuracy"]
+kappa_test <- cm$overall["Kappa"]
+
+cat("Test set Accuracy:", round(acc_test, 3), "\n")
+cat("Test set Kappa:   ", round(kappa_test, 3), "\n")
+print(cm$table)
+predicted <- predict(svm_mod, newdata = x_test)
+predicted_probs <- predict(svm_mod, newdata = x_test, type = "prob")
+
+predicted_probs_percent <- round(predicted_probs * 100, 1)
+
+results_df <- data.frame(
+  SampleID       = rownames(x_test),
+  TrueGrade      = y_test,
+  PredictedGrade = predicted,
+  predicted_probs_percent  
+)
+print(results_df)
+```
+```{r}
+expr_pca <- t(expr_train[sig_genes_strong, , drop = FALSE])  
+
+pca_res <- prcomp(expr_pca, scale. = TRUE)
+
+pca_df <- data.frame(
+  PC1 = pca_res$x[, 1],
+  PC2 = pca_res$x[, 2],
+  Grade = labels_train
+)
+library(ggplot2)
+
+ggplot(pca_df, aes(x = PC1, y = PC2, color = Grade)) +
+  geom_point(size = 3, alpha = 0.8) +
+  stat_ellipse(type = "norm", linetype = 2) +
+  theme_minimal() +
+  labs(
+    title = "PCA of Samples (by Grade)",
+    x = paste0("PC1 (", round(summary(pca_res)$importance[2,1]*100, 1), "% variance)"),
+    y = paste0("PC2 (", round(summary(pca_res)$importance[2,2]*100, 1), "% variance)")
+  )
+
+
+```
+```{r}
+library(caret)
+
+trctrl <- trainControl(
+  method = "cv",
+  number = 5,
+  classProbs = TRUE,
+  summaryFunction = defaultSummary,
+  savePredictions = "final"
+)
+
+x_train <- t(expr_train[sig_genes_strong, , drop = FALSE])
+y_train <- labels_train
+
+set.seed(123)
+
+svm_mod <- train(x = x_train, y = y_train, method = "svmLinear", trControl = trctrl)
+cv_5acc_svm <- svm_mod$resample$Accuracy
+
+knn_mod <- train(x = x_train, y = y_train, method = "knn", trControl = trctrl)
+cv_5acc_knn <- knn_mod$resample$Accuracy
+
+rf_mod <- train(x = x_train, y = y_train, method = "rf", trControl = trctrl)
+cv_5acc_rf <- rf_mod$resample$Accuracy
+
+boxplot(
+  list(
+    SVM = cv_5acc_svm,
+    KNN = cv_5acc_knn,
+    RF  = cv_5acc_rf
+  ),
+  ylab = "CV Accuracy",
+  col = c("gray90", "gray80", "gray70"),
+  main = "Model Comparison (5-Fold CV Accuracy)"
+)
+
+
+```
