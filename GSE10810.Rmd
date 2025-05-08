@@ -1,0 +1,331 @@
+---
+output:
+  html_document:
+    code_folding: hide
+    toc: true
+    toc_depth: 2
+    toc_float: true
+    theme: readable
+---
+```{r include=FALSE}
+library(GEOquery) 
+library(R.utils)
+library(reshape2)
+library(ggplot2)
+library(limma)
+library(dplyr)
+library(tidyr)
+
+gse <- getGEO("GSE10810")
+gse10810 <- gse[[1]]
+```
+# Data Processing
+## Check for NA values, The size of the dataset, Remove lowly expressed genes
+```{r echo=FALSE}
+
+f = fData(gse10810)
+
+M <- exprs(gse10810)
+
+dim(gse10810)
+
+# Determine whether filtering is needed
+if (any(M < 5, na.rm = TRUE)) {
+  keep_genes <- apply(M, 1, function(x) all(x > 5, na.rm = TRUE))
+  M_filtered <- M[keep_genes, ]
+  cat("Filtering applied.\n")
+} else {
+  M_filtered <- M
+  cat("No filtering needed.\n")
+}
+
+cat("Number of genes before filtering:", nrow(M), "\n")
+cat("Number of genes after filtering :", nrow(M_filtered), "\n")
+
+```
+## extract and standardize grade into correct names
+```{r}
+# Function to extract and standardize grade into correct names
+standardize_grade <- function(grades, pattern, replacements, remove_na = TRUE) {
+  grades <- tolower(grades)
+  for (i in seq_along(pattern)) {
+    grades <- gsub(pattern[i], replacements[i], grades)
+  }
+  grades <- gsub(".*(\\b[0-3]\\b).*", "\\1", grades)  # Extract grade number if embedded
+  grades[!grades %in% c("0", "1", "2", "3")] <- NA     # Drop anything unexpected
+  if (remove_na) {
+    grades <- as.numeric(grades)
+  }
+  
+  # Map grades to full names
+  grade_names <- c("0" = "Normal", "1" = "Grade1", "2" = "Grade2", "3" = "Grade3")
+  grades <- grade_names[as.character(grades)]  # Map numbers to grade names
+  
+  return(grades)
+}
+
+### GSE10810
+pdata10810 <- pData(gse10810)
+grades10810 <- pdata10810$characteristics_ch1.3
+# Patterns to handle: "grade: 0", "grade: i", "grade: ii", "grade: iii"
+pdata10810$grade <- standardize_grade(
+  grades10810,
+  c("grade: 0", "grade: i\\b", "grade: ii\\b", "grade: iii\\b"),
+  c("0", "1", "2", "3")
+)
+pdata10810 <- pdata10810[!is.na(pdata10810$grade), ]
+```
+
+## PCA Plot(use filtering genes)
+```{r}
+## PCA Plot (use filtered genes)
+
+samples_to_keep <- intersect(colnames(M_filtered), rownames(pdata10810))
+
+expr_mat <- M_filtered[, samples_to_keep]
+pdata10810 <- pdata10810[samples_to_keep, ]
+
+expr_for_pca <- t(expr_mat)
+
+grade_vec <- pdata10810$grade
+grade_fac <- factor(grade_vec,
+                    levels = c("Normal", "Grade1", "Grade2", "Grade3"))
+
+pca_res <- prcomp(expr_for_pca,
+                  center = TRUE,
+                  scale. = TRUE)
+
+pca_df <- data.frame(
+  PC1   = pca_res$x[, 1],
+  PC2   = pca_res$x[, 2],
+  Grade = grade_fac
+)
+
+library(ggplot2)
+ggplot(pca_df, aes(x = PC1, y = PC2, color = Grade)) +
+  geom_point(size = 3, alpha = 0.8) +
+  stat_ellipse(type = "norm", linetype = 2) +
+  theme_bw() +
+  labs(title = "PCA of Samples by Grade",
+       x     = paste0("PC1 (", round(100 * summary(pca_res)$importance[2, 1], 1), "%)"),
+       y     = paste0("PC2 (", round(100 * summary(pca_res)$importance[2, 2], 1), "%)")) +
+  theme(legend.position = "right",
+        plot.title = element_text(hjust = 0.5))
+
+```
+
+## 80/20 Train/Test Split 
+```{r echo=FALSE, warning=FALSE}
+library(caret)
+library(lattice)
+set.seed(123)
+
+grade_vec <- pdata10810$grade
+names(grade_vec) <- rownames(pdata10810)
+
+samples_to_keep <- intersect(colnames(M_filtered), names(grade_vec))
+expr_mat <- M_filtered[, samples_to_keep]
+grade_vec <- grade_vec[samples_to_keep]
+
+train_idx <- createDataPartition(grade_vec, p = 0.8, list = FALSE)
+
+train_samples <- samples_to_keep[train_idx]
+test_samples  <- samples_to_keep[-train_idx]
+
+expr_train <- expr_mat[, train_samples]
+expr_test  <- expr_mat[, test_samples]
+
+labels_train <- factor(grade_vec[train_samples], 
+                       levels = c("Normal", "Grade1", "Grade2", "Grade3"))
+labels_test  <- factor(grade_vec[test_samples], 
+                       levels = c("Normal", "Grade1", "Grade2", "Grade3"))
+
+levels(labels_train) <- make.names(levels(labels_train))
+levels(labels_test)  <- make.names(levels(labels_test))
+
+table(labels_train)
+table(labels_test)
+```
+# Applying SMOTE to Balance Tumor Grade Classes
+```{r}
+library(smotefamily)
+
+expr_t <- t(expr_train)
+
+expr_df <- as.data.frame(expr_t)
+expr_df$grade <- labels_train[match(rownames(expr_df), names(labels_train))]
+
+expr_df$grade <- as.factor(expr_df$grade)
+
+smote_result <- SMOTE(
+  X = expr_df[, -ncol(expr_df)],  
+  target = expr_df$grade,         
+  K = 1,
+  dup_size = 5                  
+)
+expr_smote <- smote_result$data
+
+metadata_train <- data.frame(
+  sample = paste0("SMOTE_", seq_len(nrow(expr_smote))),
+  grade = expr_smote$class
+)
+expr_balanced <- t(as.matrix(expr_smote[, -ncol(expr_smote)]))
+colnames(expr_balanced) <- metadata_train$sample
+
+stopifnot(all(colnames(expr_balanced) == metadata_train$sample))
+
+metadata_train$grade <- factor(
+  expr_smote$class,
+  levels = c("Normal", "Grade1", "Grade2", "Grade3")
+)
+
+table(metadata_train$grade)
+
+```
+
+# Feature Selection and Top N Genes (ascending p-value)
+```{r}
+# Feature Selection on SMOTE-balanced Data
+
+labels_factor <- factor(metadata_train$grade, levels = c("Normal", "Grade1", "Grade2", "Grade3"))
+design <- model.matrix(~ 0 + labels_factor)
+colnames(design) <- levels(labels_factor)
+
+fit <- lmFit(expr_balanced, design)
+fit <- eBayes(fit)
+res <- topTable(fit, number = Inf, adjust.method = "BH")
+
+# Significant genes (adjusted p < 0.05)
+sig_genes <- rownames(subset(res, adj.P.Val < 0.05))
+
+# Group means and strong difference filtering (max - min > 1)
+group_means <- sapply(levels(labels_factor), function(lv) {
+  rowMeans(expr_balanced[, metadata_train$grade == lv, drop = FALSE])
+})
+expr_diff <- apply(group_means, 1, function(x) max(x) - min(x))
+sig_genes_strong <- sig_genes[expr_diff[sig_genes] > 1]
+
+# Sort by adjusted p-value
+res_sig_strong <- res[sig_genes_strong, ]
+res_sig_strong <- res_sig_strong[order(res_sig_strong$adj.P.Val), ]
+
+# Build top gene sets only if enough genes exist
+top_gene_sets <- list()
+if (nrow(res_sig_strong) >= 30)  top_gene_sets$top30  <- rownames(res_sig_strong)[1:30]
+if (nrow(res_sig_strong) >= 50)  top_gene_sets$top50  <- rownames(res_sig_strong)[1:50]
+if (nrow(res_sig_strong) >= 80)  top_gene_sets$top80  <- rownames(res_sig_strong)[1:80]
+if (nrow(res_sig_strong) >= 110) top_gene_sets$top110 <- rownames(res_sig_strong)[1:110]
+
+# Optional: show available gene set sizes
+cat("Available gene sets:\n")
+print(names(top_gene_sets))
+
+```
+# SVM KNN RF (different TOP Genes and different K-fold cv)
+```{r}
+library(caret)
+set.seed(123)
+
+results <- list()
+cv_folds <- c(5, 10)
+
+# SMOTE balanced labels
+y_train <- as.factor(metadata_train$grade)
+levels(y_train) <- make.names(levels(y_train))
+
+for (gene_set_name in names(top_gene_sets)) {
+  
+  gene_set <- top_gene_sets[[gene_set_name]]
+  
+  x_train <- t(expr_balanced[gene_set, , drop = FALSE])
+  
+  x_test <- t(expr_test[gene_set, , drop = FALSE])
+  y_test <- labels_test
+  
+  results[[gene_set_name]] <- list()
+  
+  for (cv in cv_folds) {
+    
+    trctrl <- trainControl(
+      method = "cv",
+      number = cv,
+      classProbs = TRUE,
+      savePredictions = "final"
+    )
+    
+    # --------- SVM ---------
+    svm_mod <- train(
+      x = x_train,
+      y = y_train,
+      method = "svmLinear",
+      trControl = trctrl,
+      tuneGrid = data.frame(C = 1)
+    )
+    
+    # --------- KNN ---------
+    knn_mod <- train(
+      x = x_train,
+      y = y_train,
+      method = "knn",
+      trControl = trctrl,
+      tuneGrid = expand.grid(k = 5:10)
+    )
+    
+    # --------- Random Forest ---------
+    rf_mod <- train(
+      x = x_train,
+      y = y_train,
+      method = "rf",
+      trControl = trctrl,
+      ntree = 100
+    )
+    
+    results[[gene_set_name]][[paste0("CV", cv)]] <- list(
+      SVM = svm_mod$resample$Accuracy,
+      KNN = knn_mod$resample$Accuracy,
+      RF  = rf_mod$resample$Accuracy
+    )
+    
+    cat("\n====", gene_set_name, "with", cv, "-fold CV ====\n")
+    cat("SVM Mean Acc:", round(mean(svm_mod$resample$Accuracy), 3), "\n")
+    cat("KNN Mean Acc:", round(mean(knn_mod$resample$Accuracy), 3), "\n")
+    cat("RF  Mean Acc:",  round(mean(rf_mod$resample$Accuracy), 3), "\n")
+    
+    # ========= Make predictions on the real test set =========
+    pred_svm <- predict(svm_mod, newdata = x_test)
+    pred_knn <- predict(knn_mod, newdata = x_test)
+    pred_rf  <- predict(rf_mod, newdata = x_test)
+    
+    cat("==== Test set Evaluation ====\n")
+    cat("SVM  - Accuracy:", round(confusionMatrix(pred_svm, y_test)$overall["Accuracy"], 3), "\n")
+    cat("KNN  - Accuracy:", round(confusionMatrix(pred_knn, y_test)$overall["Accuracy"], 3), "\n")
+    cat("RF   - Accuracy:", round(confusionMatrix(pred_rf,  y_test)$overall["Accuracy"], 3), "\n")
+  }
+}
+
+par(mfrow = c(2, 2)) 
+for (gene_set_name in names(results)) {
+  boxplot(
+    results[[gene_set_name]]$CV5,
+    main = paste(gene_set_name, "- 5-Fold CV"),
+    ylab = "Accuracy",
+    col = c("lightgray", "lightblue", "lightgreen")
+  )
+}
+
+```
+
+```{r}
+par(mfrow = c(2, 2)) 
+
+for (gene_set_name in names(results)) {
+  
+  # ---- 10-fold ----
+  boxplot(
+    results[[gene_set_name]]$CV10,
+    main = paste(gene_set_name, "- 10-Fold CV"),
+    ylab = "Accuracy",
+    col = c("lightgray", "lightblue", "lightgreen")
+  )
+}
+```
