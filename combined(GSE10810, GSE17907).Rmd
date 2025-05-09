@@ -1,0 +1,544 @@
+---
+title: "COMBINED V2"
+output: html_document
+date: "2025-05-06"
+---
+
+```{r include=FALSE}
+library(GEOquery) 
+library(R.utils)
+library(reshape2)
+library(ggplot2)
+library(limma)
+library(dplyr)
+library(Biobase)
+library(dplyr)
+library(caret)
+library(e1071)  # for SVM
+library(randomForest)
+library(edgeR)
+library(sva)
+```
+
+```{r include=FALSE}
+gse <- getGEO("GSE10810")
+gse10810 <- gse[[1]]
+
+gse <- getGEO("GSE17907")
+gse17907 <- gse[[1]]
+
+gse <- getGEO("GSE20711")
+gse20711 <- gse[[1]]
+
+gse <- getGEO("GSE42568")
+gse42568 <- gse[[1]]
+
+gse <- getGEO("GSE61304")
+gse61304  <- gse[[1]]
+
+gse <- getGEO("GSE15852")
+gse15852  <- gse[[1]]
+```
+
+```{r}
+# Function to extract and standardize grade into correct names
+standardize_grade <- function(grades, pattern, replacements, remove_na = TRUE) {
+  grades <- tolower(grades)
+  for (i in seq_along(pattern)) {
+    grades <- gsub(pattern[i], replacements[i], grades)
+  }
+  grades <- gsub(".*(\\b[0-3]\\b).*", "\\1", grades)  # Extract grade number if embedded
+  grades[!grades %in% c("0", "1", "2", "3")] <- NA     # Drop anything unexpected
+  if (remove_na) {
+    grades <- as.numeric(grades)
+  }
+  
+  # Map grades to full names
+  grade_names <- c("0" = "Normal", "1" = "Grade1", "2" = "Grade2", "3" = "Grade3")
+  grades <- grade_names[as.character(grades)]  # Map numbers to grade names
+  
+  return(grades)
+}
+
+### GSE10810
+pdata10810 <- pData(gse10810)
+grades10810 <- pdata10810$characteristics_ch1.3
+# Patterns to handle: "grade: 0", "grade: i", "grade: ii", "grade: iii"
+pdata10810$grade <- standardize_grade(
+  grades10810,
+  c("grade: 0", "grade: i\\b", "grade: ii\\b", "grade: iii\\b"),
+  c("0", "1", "2", "3")
+)
+pdata10810 <- pdata10810[!is.na(pdata10810$grade), ]
+
+### GSE17907
+pdata17907 <- pData(gse17907)
+grades17907 <- pdata17907$`grade sbr:ch1`
+pdata17907$grade <- standardize_grade(
+  grades17907,
+  c("--"),
+  c("0")
+)
+pdata17907 <- pdata17907[!is.na(pdata17907$grade), ]
+
+### GSE20711
+pdata20711 <- pData(gse20711)
+grades20711 <- pdata20711$characteristics_ch1.3
+pdata20711$grade <- standardize_grade(
+  grades20711,
+  c("grade: na", "grade: "),
+  c(NA, "")
+)
+pdata20711 <- pdata20711[!is.na(pdata20711$grade), ]
+
+### GSE42568
+pdata42568 <- pData(gse42568)
+grades42568 <- pdata42568$characteristics_ch1.4
+pdata42568$grade <- standardize_grade(
+  grades42568,
+  c("grade: na", "grade: "),
+  c(NA, "")
+)
+pdata42568 <- pdata42568[!is.na(pdata42568$grade), ]
+
+### GSE61304
+pdata61304 <- pData(gse61304)
+grades61304 <- pdata61304$`characteristics_ch1.2`
+pdata61304$grade <- standardize_grade(
+  grades61304,
+  c("tumor grade: na", "tumor grade: g1", "tumor grade: g2", "tumor grade: g3"),
+  c(NA, "1", "2", "3")
+)
+pdata61304 <- pdata61304[!is.na(pdata61304$grade), ]
+
+### GSE15852
+pdata15852 <- pData(gse15852)
+grades15852 <- pdata15852$`characteristics_ch1.2`
+pdata15852$grade <- standardize_grade(
+  grades15852,
+  c("grade: normal", "grade: grade 1", "grade: grade 2", "grade: grade 3"),
+  c("0", "1", "2", "3")
+)
+pdata15852 <- pdata15852[!is.na(pdata15852$grade), ]
+
+```
+
+```{r}
+#Put the first five into the list
+pdata_list <- list(
+  GSE10810 = pdata10810,
+  GSE17907 = pdata17907,
+  GSE20711 = pdata20711,
+  GSE42568 = pdata42568,
+  GSE61304 = pdata61304
+)
+
+required_grades <- c("Normal", "Grade1", "Grade2", "Grade3")
+
+qualified_datasets <- names(Filter(function(pdata) {
+  all(required_grades %in% pdata$grade)
+}, pdata_list))
+
+cat("Datasets containing all four grades:", paste(qualified_datasets, collapse = ", "), "\n")
+
+```
+
+
+```{r}
+# Helper function to process ExpressionSet
+process_eset <- function(eset, min_avg_expr = 5) {
+  exprs_mat <- exprs(eset)
+  
+  # Filter lowly expressed genes
+  keep_exprs <- rowMeans(exprs_mat) >= min_avg_expr
+  exprs_mat <- exprs_mat[keep_exprs, , drop = FALSE]
+  
+  # Remove duplicate genes (based on rownames)
+  unique_rows <- !duplicated(rownames(exprs_mat))
+  exprs_mat <- exprs_mat[unique_rows, , drop = FALSE]
+
+  # Subset the ExpressionSet to match filtered expression matrix
+  eset_filtered <- eset[rownames(exprs_mat), ]
+  return(eset_filtered)
+}
+
+# Apply to each dataset and keep same names
+gse10810 <- process_eset(gse10810)
+gse17907 <- process_eset(gse17907)
+gse20711 <- process_eset(gse20711)
+gse42568 <- process_eset(gse42568)
+gse61304 <- process_eset(gse61304)
+gse15852 <- process_eset(gse15852)
+
+```
+
+
+```{r}
+
+# 1. Expression sets
+expr_list <- list(
+
+  gse10810 = exprs(gse10810),
+  gse17907 = exprs(gse17907)
+)
+
+# 2. Phenotype sets
+pdata_list <- list(
+  pdata10810,
+  pdata17907
+)
+
+# 3. Fix phenotype rownames using geo_accession if present
+pdata_list <- lapply(pdata_list, function(p) {
+  if ("geo_accession" %in% colnames(p)) {
+    rownames(p) <- p$geo_accession
+  }
+  return(p)
+})
+
+# Reassign corrected pdata
+
+# 1. Assign pdata
+pdata10810 <- pdata_list[[1]]
+pdata17907 <- pdata_list[[2]]
+
+# 2. Create pheno_list with dataset names
+pheno_list <- list(
+  gse10810 = pdata10810,
+  gse17907 = pdata17907
+)
+
+# 3. Extract grade list and track batch
+grade_list <- Map(function(expr, pheno, batch_name) {
+  sample_names <- colnames(expr)
+  matched_pheno <- pheno[sample_names, , drop = FALSE]
+  grades <- matched_pheno$grade
+  names(grades) <- sample_names
+  # Track batch
+  data.frame(
+    sample = sample_names,
+    grade = grades,
+    batch = batch_name,
+    stringsAsFactors = FALSE
+  )
+}, expr_list, pheno_list, names(pheno_list))
+
+# 4. Combine all grade + batch info into metadata
+metadata <- do.call(rbind, grade_list)
+
+# 5. Clean sample names to remove prefixes (e.g., "gse10810.")
+metadata$sample <- sub(".*\\.", "", metadata$sample)
+
+# 6. Combine expression matrices
+expr_dfs <- lapply(expr_list, function(mat) {
+  df <- as.data.frame(mat)
+  df$gene <- rownames(mat)
+  df
+})
+
+merged_expr <- Reduce(function(x, y) full_join(x, y, by = "gene"), expr_dfs)
+rownames(merged_expr) <- merged_expr$gene
+merged_expr$gene <- NULL
+
+# 7. Ensure metadata matches expression matrix columns
+colnames(merged_expr) <- sub(".*\\.", "", colnames(merged_expr))  # Match cleaned sample names
+metadata <- metadata[match(colnames(merged_expr), metadata$sample), ]
+
+# 8. Final check
+stopifnot(all(metadata$sample == colnames(merged_expr)))
+
+# ✅ Outputs
+metadata
+```
+```{r}
+metadata <- metadata[!is.na(metadata$grade), ]
+metadata
+# 🧼 Remove corresponding columns from merged_expr
+merged_expr <- merged_expr[, metadata$sample]
+anyNA(merged_expr)
+sum(is.na(merged_expr))
+merged_expr <- merged_expr[complete.cases(merged_expr), ]
+merged_expr
+
+table(metadata$grade)
+```
+```{r}
+# Determine whether filtering is needed
+if (any(merged_expr < 5, na.rm = TRUE)) {
+  keep_genes <- apply(merged_expr, 1, function(x) all(x > 5, na.rm = TRUE))
+  merged_expr_filtered <- merged_expr[keep_genes, ]
+  cat("Filtering applied.\n")
+} else {
+  merged_expr_filtered <- merged_expr
+  cat("No filtering needed.\n")
+}
+
+cat("Number of genes before filtering:", nrow(merged_expr), "\n")
+cat("Number of genes after filtering :", nrow(merged_expr_filtered), "\n")
+
+metadata <- metadata[metadata$sample %in% colnames(merged_expr_filtered), ]
+
+merged_expr_filtered <- merged_expr_filtered[, metadata$sample]
+
+stopifnot(all(colnames(merged_expr_filtered) == metadata$sample))
+```
+
+```{r echo=FALSE}
+# 1. Log2 transformation
+log_merged <- log2(merged_expr_filtered + 1)
+
+# 2. Remove negative values
+merged_expr_filtered[merged_expr_filtered < 0] <- 0
+
+# 3. DGEList normalization
+dge <- DGEList(counts = merged_expr_filtered)
+dge <- calcNormFactors(dge)
+normalized_expr <- cpm(dge, log = FALSE)
+log2_expr <- cpm(dge, log = TRUE)
+
+# 4. Ensure each grade has ≥1 sample in both train/test sets
+set.seed(123)
+split_by_grade <- split(metadata, metadata$grade)
+
+train_samples <- unlist(lapply(split_by_grade, function(df) {
+  n <- nrow(df)
+  if (n >= 2) {
+    sample(df$sample, size = floor(0.8 * n))  # 80% to train
+  } else {
+    sample(df$sample, size = 1)  # if only 1 sample, send to train
+  }
+}))
+
+test_samples <- setdiff(metadata$sample, train_samples)
+
+# 5. Subset expression and metadata
+expr_train <- normalized_expr[, train_samples]
+expr_test  <- normalized_expr[, test_samples]
+
+metadata_train <- metadata[match(train_samples, metadata$sample), ]
+metadata_test  <- metadata[match(test_samples, metadata$sample), ]
+
+# 6. Prepare factor levels
+metadata_train$grade <- factor(metadata_train$grade,
+                               levels = c("Normal", "Grade1", "Grade2", "Grade3"))
+metadata_test$grade <- factor(metadata_test$grade,
+                              levels = c("Normal", "Grade1", "Grade2", "Grade3"))
+
+levels(metadata_train$grade) <- make.names(levels(metadata_train$grade))
+levels(metadata_test$grade)  <- make.names(levels(metadata_test$grade))
+
+# 7. Check
+cat("Training set grade counts:\n")
+print(table(metadata_train$grade))
+cat("Test set grade counts:\n")
+print(table(metadata_test$grade))
+
+```
+
+```{r}
+batch <- metadata_train$batch  # Replace 'batch' with the actual batch column name
+grade <- factor(metadata_train$grade)  # Replace with actual condition column
+mod <- model.matrix(~ grade)  # Model for the biological variable
+
+
+remove_zero_var_genes <- function(expr, batch) {
+  keep <- apply(expr, 1, function(gene) {
+    all(tapply(gene, batch, function(x) var(x) > 0))
+  })
+  expr[keep, ]
+}
+
+expr_train_clean <- remove_zero_var_genes(expr_train, batch)
+# Should return: Factor or atomic vector, length == ncol(expr_train)
+
+# Perform ComBat batch correction
+combat <- ComBat(dat = expr_train_clean, batch = batch, mod = mod)
+
+
+# Check the dimensions of combat_train
+dim(combat) 
+```
+```{r}
+library(ggplot2)
+library(reshape2)
+
+# Function to run PCA and return a dataframe
+get_pca_df <- function(expr_mat, metadata, prefix = "") {
+  pca <- prcomp(t(expr_mat), scale. = TRUE)
+  pca_df <- as.data.frame(pca$x[, 1:2])  # First two PCs
+  pca_df$sample <- rownames(pca_df)
+  pca_df <- merge(pca_df, metadata, by = "sample")
+  colnames(pca_df)[1:3] <- paste0(prefix, c("PC1", "PC2", "sample"))
+  return(pca_df)
+}
+
+# PCA before batch correction
+pca_before <- get_pca_df(log2_expr, metadata, prefix = "before_")
+
+# PCA after batch correction
+pca_after <- get_pca_df(combat, metadata, prefix = "after_")
+```
+
+```{r}
+# Plot before batch correction
+ggplot(pca_before, aes(x = before_PC1, y = before_PC2, color = batch)) +
+  geom_point(size = 2) +
+  labs(title = "PCA Before Batch Correction", x = "PC1", y = "PC2") +
+  theme_minimal()
+
+# Plot after batch correction
+ggplot(pca_after, aes(x = after_PC1, y = after_PC2, color = batch)) +
+  geom_point(size = 2) +
+  labs(title = "PCA After Batch Correction", x = "PC1", y = "PC2") +
+  theme_minimal()
+```
+```{r}
+library(smotefamily)
+
+# Transpose so samples are rows
+expr_t <- t(combat)
+expr_df <- as.data.frame(expr_t)
+expr_df$grade <- metadata_train$grade[match(rownames(expr_df), metadata_train$sample)]
+
+# Convert grade to factor
+expr_df$grade <- as.factor(expr_df$grade)
+
+# Apply SMOTE (over-sampling only)
+# dup_size controls how many synthetic samples to make per minority sample
+smote_result <- SMOTE(X = expr_df[, -ncol(expr_df)],
+                      target = expr_df$grade,
+                      K = 3,
+                      dup_size = 5)  # try 5–10
+
+# SMOTE returns a list with $data
+expr_smote <- smote_result$data
+
+# Extract new metadata and expression matrix
+metadata_train <- data.frame(
+  sample = paste0("SMOTE_", seq_len(nrow(expr_smote))),
+  grade = expr_smote$class
+)
+
+expr_balanced <- t(as.matrix(expr_smote[, -ncol(expr_smote)]))
+colnames(expr_balanced) <- metadata_train$sample
+
+metadata_train$grade <- factor(
+  expr_smote$class,
+  levels = c("Normal", "Grade1", "Grade2", "Grade3")
+)
+
+table(metadata_train$grade)
+```
+
+# Feature Selection and Top N Genes (ascending p-value)
+```{r}
+# Feature Selection on SMOTE-balanced Data
+
+labels_factor <- factor(metadata_train$grade, levels = c("Normal", "Grade1", "Grade2", "Grade3"))
+design <- model.matrix(~ 0 + labels_factor)
+colnames(design) <- levels(labels_factor)
+
+fit <- lmFit(expr_balanced, design)
+fit <- eBayes(fit)
+res <- topTable(fit, number = Inf, adjust.method = "BH")
+
+# Significant genes (adjusted p < 0.05)
+sig_genes <- rownames(subset(res, adj.P.Val < 0.05))
+
+# Group means and strong difference filtering (max - min > 1)
+group_means <- sapply(levels(labels_factor), function(lv) {
+  rowMeans(expr_balanced[, metadata_train$grade == lv, drop = FALSE])
+})
+expr_diff <- apply(group_means, 1, function(x) max(x) - min(x))
+sig_genes_strong <- sig_genes[expr_diff[sig_genes] > 1]
+
+# Sort by adjusted p-value
+res_sig_strong <- res[sig_genes_strong, ]
+res_sig_strong <- res_sig_strong[order(res_sig_strong$adj.P.Val), ]
+
+# Build top gene sets only if enough genes exist
+top_gene_sets <- list()
+if (nrow(res_sig_strong) >= 30)  top_gene_sets$top30  <- rownames(res_sig_strong)[1:30]
+if (nrow(res_sig_strong) >= 50)  top_gene_sets$top50  <- rownames(res_sig_strong)[1:50]
+if (nrow(res_sig_strong) >= 80)  top_gene_sets$top80  <- rownames(res_sig_strong)[1:80]
+if (nrow(res_sig_strong) >= 110) top_gene_sets$top110 <- rownames(res_sig_strong)[1:110]
+
+# Optional: show available gene set sizes
+cat("Available gene sets:\n")
+print(names(top_gene_sets))
+
+```
+# SVM KNN RF (different TOP Genes and different K-fold cv)
+```{r}
+library(caret)
+set.seed(123)
+
+results <- list()
+cv_folds <- c(5, 10)
+
+# SMOTE balanced labels
+y_train <- as.factor(metadata_train$grade)
+levels(y_train) <- make.names(levels(y_train))
+
+for (gene_set_name in names(top_gene_sets)) {
+  
+  gene_set <- top_gene_sets[[gene_set_name]]
+  
+  x_train <- t(expr_balanced[gene_set, , drop = FALSE])
+  
+  x_test <- t(expr_test[gene_set, , drop = FALSE])
+  y_test <- labels_test
+  
+  results[[gene_set_name]] <- list()
+  
+  for (cv in cv_folds) {
+    
+    trctrl <- trainControl(
+      method = "cv",
+      number = cv,
+      classProbs = TRUE,
+      savePredictions = "final"
+    )
+    
+    # --------- SVM ---------
+    svm_mod <- train(
+      x = x_train,
+      y = y_train,
+      method = "svmLinear",
+      trControl = trctrl,
+      tuneGrid = data.frame(C = 1)
+    )
+    
+    # --------- KNN ---------
+    knn_mod <- train(
+      x = x_train,
+      y = y_train,
+      method = "knn",
+      trControl = trctrl,
+      tuneGrid = expand.grid(k = 5:10)
+    )
+    
+    # --------- Random Forest ---------
+    rf_mod <- train(
+      x = x_train,
+      y = y_train,
+      method = "rf",
+      trControl = trctrl,
+      ntree = 100
+    )
+    
+    results[[gene_set_name]][[paste0("CV", cv)]] <- list(
+      SVM = svm_mod$resample$Accuracy,
+      KNN = knn_mod$resample$Accuracy,
+      RF  = rf_mod$resample$Accuracy
+    )
+    
+    cat("\n====", gene_set_name, "with", cv, "-fold CV ====\n")
+    cat("SVM Mean Acc:", round(mean(svm_mod$resample$Accuracy), 3), "\n")
+    cat("KNN Mean Acc:", round(mean(knn_mod$resample$Accuracy), 3), "\n")
+    cat("RF  Mean Acc:",  round(mean(rf_mod$resample$Accuracy), 3), "\n")
+    
+  }
+}
+
+```
