@@ -1,0 +1,27 @@
+cat(">>> Sourcing app.R <<<\n")
+
+#setwd("~/Desktop/2025S1/DATA3888/Project/TestPreva")
+#library(shiny)
+#runApp("app.R")
+
+library(shiny)
+library(GEOquery)
+library(DT)
+library(ggplot2)
+library(bslib)
+library(reshape2)
+library(dplyr)
+library(pheatmap)
+library(limma)
+library(caret)
+library(MLmetrics)
+library(caret)
+library(MLmetrics)
+library(pROC)
+library(bslib) 
+
+source("helpers.R")
+source("ui.R")
+source("server.R")
+
+shinyApp(ui = ui, server = server)
