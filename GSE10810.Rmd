@@ -1,12 +1,9 @@
 ---
-output:
-  html_document:
-    code_folding: hide
-    toc: true
-    toc_depth: 2
-    toc_float: true
-    theme: readable
+title: "COMBINED V2"
+output: html_document
+date: "2025-05-06"
 ---
+
 ```{r include=FALSE}
 library(GEOquery) 
 library(R.utils)
@@ -14,36 +11,20 @@ library(reshape2)
 library(ggplot2)
 library(limma)
 library(dplyr)
-library(tidyr)
+library(Biobase)
+library(dplyr)
+library(caret)
+library(e1071)  # for SVM
+library(randomForest)
+library(edgeR)
+library(sva)
+```
 
+```{r include=FALSE}
 gse <- getGEO("GSE10810")
 gse10810 <- gse[[1]]
 ```
-# Data Processing
-## Check for NA values, The size of the dataset, Remove lowly expressed genes
-```{r echo=FALSE}
 
-f = fData(gse10810)
-
-M <- exprs(gse10810)
-
-dim(gse10810)
-
-# Determine whether filtering is needed
-if (any(M < 5, na.rm = TRUE)) {
-  keep_genes <- apply(M, 1, function(x) all(x > 5, na.rm = TRUE))
-  M_filtered <- M[keep_genes, ]
-  cat("Filtering applied.\n")
-} else {
-  M_filtered <- M
-  cat("No filtering needed.\n")
-}
-
-cat("Number of genes before filtering:", nrow(M), "\n")
-cat("Number of genes after filtering :", nrow(M_filtered), "\n")
-
-```
-## extract and standardize grade into correct names
 ```{r}
 # Function to extract and standardize grade into correct names
 standardize_grade <- function(grades, pattern, replacements, remove_na = TRUE) {
@@ -74,119 +55,229 @@ pdata10810$grade <- standardize_grade(
   c("0", "1", "2", "3")
 )
 pdata10810 <- pdata10810[!is.na(pdata10810$grade), ]
+
 ```
 
-## PCA Plot(use filtering genes)
 ```{r}
-## PCA Plot (use filtered genes)
-
-samples_to_keep <- intersect(colnames(M_filtered), rownames(pdata10810))
-
-expr_mat <- M_filtered[, samples_to_keep]
-pdata10810 <- pdata10810[samples_to_keep, ]
-
-expr_for_pca <- t(expr_mat)
-
-grade_vec <- pdata10810$grade
-grade_fac <- factor(grade_vec,
-                    levels = c("Normal", "Grade1", "Grade2", "Grade3"))
-
-pca_res <- prcomp(expr_for_pca,
-                  center = TRUE,
-                  scale. = TRUE)
-
-pca_df <- data.frame(
-  PC1   = pca_res$x[, 1],
-  PC2   = pca_res$x[, 2],
-  Grade = grade_fac
+#Put the first five into the list
+pdata_list <- list(
+  GSE10810 = pdata10810,
+  GSE17907 = pdata17907
 )
 
+required_grades <- c("Normal", "Grade1", "Grade2", "Grade3")
+
+qualified_datasets <- names(Filter(function(pdata) {
+  all(required_grades %in% pdata$grade)
+}, pdata_list))
+
+cat("Datasets containing all four grades:", paste(qualified_datasets, collapse = ", "), "\n")
+
+```
+
+
+```{r}
+# Helper function to process ExpressionSet
+process_eset <- function(eset, min_avg_expr = 5) {
+  exprs_mat <- exprs(eset)
+  
+  # Filter lowly expressed genes
+  keep_exprs <- rowMeans(exprs_mat) >= min_avg_expr
+  exprs_mat <- exprs_mat[keep_exprs, , drop = FALSE]
+  
+  # Remove duplicate genes (based on rownames)
+  unique_rows <- !duplicated(rownames(exprs_mat))
+  exprs_mat <- exprs_mat[unique_rows, , drop = FALSE]
+
+  # Subset the ExpressionSet to match filtered expression matrix
+  eset_filtered <- eset[rownames(exprs_mat), ]
+  return(eset_filtered)
+}
+
+# Apply to each dataset and keep same names
+gse10810 <- process_eset(gse10810)
+
+```
+
+```{r}
+
+# 1. Expression sets
+expr_list <- list(
+
+  gse10810 = exprs(gse10810)
+)
+
+# 2. Phenotype sets
+pdata_list <- list(
+  pdata10810
+)
+
+# 3. Fix phenotype rownames using geo_accession if present
+pdata_list <- lapply(pdata_list, function(p) {
+  if ("geo_accession" %in% colnames(p)) {
+    rownames(p) <- p$geo_accession
+  }
+  return(p)
+})
+
+# Reassign corrected pdata
+
+# 1. Assign pdata
+pdata10810 <- pdata_list[[1]]
+
+
+# 2. Create pheno_list with dataset names
+pheno_list <- list(
+  gse10810 = pdata10810
+)
+
+# 3. Extract grade list and track batch
+grade_list <- Map(function(expr, pheno, batch_name) {
+  sample_names <- colnames(expr)
+  matched_pheno <- pheno[sample_names, , drop = FALSE]
+  grades <- matched_pheno$grade
+  names(grades) <- sample_names
+  # Track batch
+  data.frame(
+    sample = sample_names,
+    grade = grades,
+    batch = batch_name,
+    stringsAsFactors = FALSE
+  )
+}, expr_list, pheno_list, names(pheno_list))
+
+# 4. Combine all grade + batch info into metadata
+metadata <- do.call(rbind, grade_list)
+
+# 5. Clean sample names to remove prefixes (e.g., "gse10810.")
+metadata$sample <- sub(".*\\.", "", metadata$sample)
+
+# 6. Combine expression matrices
+expr_dfs <- lapply(expr_list, function(mat) {
+  df <- as.data.frame(mat)
+  df$gene <- rownames(mat)
+  df
+})
+
+merged_expr <- Reduce(function(x, y) full_join(x, y, by = "gene"), expr_dfs)
+rownames(merged_expr) <- merged_expr$gene
+merged_expr$gene <- NULL
+
+# 7. Ensure metadata matches expression matrix columns
+colnames(merged_expr) <- sub(".*\\.", "", colnames(merged_expr))  # Match cleaned sample names
+metadata <- metadata[match(colnames(merged_expr), metadata$sample), ]
+
+# 8. Final check
+stopifnot(all(metadata$sample == colnames(merged_expr)))
+
+# ✅ Outputs
+metadata
+```
+
+```{r}
+
+
+metadata <- metadata[!is.na(metadata$grade), ]
+metadata
+# 🧼 Remove corresponding columns from merged_expr
+gse10810 <- merged_expr[, metadata$sample]
+anyNA(merged_expr)
+sum(is.na(merged_expr))
+merged_expr <- merged_expr[complete.cases(merged_expr), ]
+merged_expr
+
+table(metadata$grade)
+```
+
+```{r}
+library(edgeR)
 library(ggplot2)
-ggplot(pca_df, aes(x = PC1, y = PC2, color = Grade)) +
-  geom_point(size = 3, alpha = 0.8) +
-  stat_ellipse(type = "norm", linetype = 2) +
-  theme_bw() +
-  labs(title = "PCA of Samples by Grade",
-       x     = paste0("PC1 (", round(100 * summary(pca_res)$importance[2, 1], 1), "%)"),
-       y     = paste0("PC2 (", round(100 * summary(pca_res)$importance[2, 2], 1), "%)")) +
-  theme(legend.position = "right",
-        plot.title = element_text(hjust = 0.5))
+library(reshape2)
+library(magrittr)
+library(cowplot)
+library(dplyr)
+
+dge <- DGEList(counts = merged_expr)
+## A common guideline is to filter so that we retain genes expressed at least 1 cpm in the smallest group of samples
+min_group_size <- min(table(metadata$grade))
+keepTheseGenes <- rowSums(cpm(dge) > 1) >= min_group_size
+
+
+beforeFiltering_plot <- dge %>% 
+  cpm(log = TRUE) %>% 
+  melt %>% 
+  dplyr::filter(is.finite(value)) %>% 
+  ggplot(aes(x = value, colour = Var2)) +
+  geom_density() + 
+  guides(colour = FALSE) +
+  ggtitle("A. Before filtering", subtitle = paste0(nrow(dge), " genes")) +
+  labs(x = "logCPM", y = "Density")
+
+afterFiltering_plot <- dge %>% 
+  cpm(log = TRUE) %>% 
+  magrittr::extract(keepTheseGenes, ) %>%
+  melt %>% 
+  dplyr::filter(is.finite(value)) %>% 
+  ggplot(aes(x = value, colour = Var2)) +
+  geom_density() + 
+  guides(colour = FALSE) +
+  ggtitle("B. After filtering", subtitle = paste0(sum(keepTheseGenes), " genes")) +
+  labs(x = "logCPM", y = "Density")
+
+cowplot::plot_grid(beforeFiltering_plot, afterFiltering_plot)
+
+merged_expr_filtered <- merged_expr[keepTheseGenes, ]
+
+metadata <- metadata[metadata$sample %in% colnames(merged_expr_filtered), ]
+merged_expr_filtered <- merged_expr_filtered[, metadata$sample]
+stopifnot(all(colnames(merged_expr_filtered) == metadata$sample))
 
 ```
 
-## 80/20 Train/Test Split 
-```{r echo=FALSE, warning=FALSE}
-library(caret)
-library(lattice)
-set.seed(123)
-
-grade_vec <- pdata10810$grade
-names(grade_vec) <- rownames(pdata10810)
-
-samples_to_keep <- intersect(colnames(M_filtered), names(grade_vec))
-expr_mat <- M_filtered[, samples_to_keep]
-grade_vec <- grade_vec[samples_to_keep]
-
-train_idx <- createDataPartition(grade_vec, p = 0.8, list = FALSE)
-
-train_samples <- samples_to_keep[train_idx]
-test_samples  <- samples_to_keep[-train_idx]
-
-expr_train <- expr_mat[, train_samples]
-expr_test  <- expr_mat[, test_samples]
-
-labels_train <- factor(grade_vec[train_samples], 
-                       levels = c("Normal", "Grade1", "Grade2", "Grade3"))
-labels_test  <- factor(grade_vec[test_samples], 
-                       levels = c("Normal", "Grade1", "Grade2", "Grade3"))
-
-levels(labels_train) <- make.names(levels(labels_train))
-levels(labels_test)  <- make.names(levels(labels_test))
-
-table(labels_train)
-table(labels_test)
-```
-# Applying SMOTE to Balance Tumor Grade Classes
+## split train and test
 ```{r}
-library(smotefamily)
+set.seed(123)
+split_by_grade <- split(metadata, metadata$grade)
 
-expr_t <- t(expr_train)
+train_samples <- unlist(lapply(split_by_grade, function(df) {
+  n <- nrow(df)
+  if (n >= 2) {
+    sample(df$sample, size = floor(0.8 * n))  
+  } else {
+    sample(df$sample, size = 1)  
+  }
+}))
 
-expr_df <- as.data.frame(expr_t)
-expr_df$grade <- labels_train[match(rownames(expr_df), names(labels_train))]
+test_samples <- setdiff(metadata$sample, train_samples)
 
-expr_df$grade <- as.factor(expr_df$grade)
+# ========== 6. Extract the expression matrix and metadata ==========
+expr_train <- merged_expr_filtered[, train_samples]
+expr_test  <- merged_expr_filtered[, test_samples]
 
-smote_result <- SMOTE(
-  X = expr_df[, -ncol(expr_df)],  
-  target = expr_df$grade,         
-  K = 1,
-  dup_size = 5                  
-)
-expr_smote <- smote_result$data
+metadata_train <- metadata[match(train_samples, metadata$sample), ]
+metadata_test  <- metadata[match(test_samples, metadata$sample), ]
 
-metadata_train <- data.frame(
-  sample = paste0("SMOTE_", seq_len(nrow(expr_smote))),
-  grade = expr_smote$class
-)
-expr_balanced <- t(as.matrix(expr_smote[, -ncol(expr_smote)]))
-colnames(expr_balanced) <- metadata_train$sample
+metadata_train$grade <- factor(metadata_train$grade,
+                               levels = c("Normal", "Grade1", "Grade2", "Grade3"))
+metadata_test$grade <- factor(metadata_test$grade,
+                              levels = c("Normal", "Grade1", "Grade2", "Grade3"))
 
-stopifnot(all(colnames(expr_balanced) == metadata_train$sample))
+levels(metadata_train$grade) <- make.names(levels(metadata_train$grade))
+levels(metadata_test$grade)  <- make.names(levels(metadata_test$grade))
 
-metadata_train$grade <- factor(
-  expr_smote$class,
-  levels = c("Normal", "Grade1", "Grade2", "Grade3")
-)
 
-table(metadata_train$grade)
+cat("Training set grade counts:\n")
+print(table(metadata_train$grade))
+cat("Test set grade counts:\n")
+print(table(metadata_test$grade))
+
+expr_balanced <- expr_train
 
 ```
 
 # Feature Selection and Top N Genes (ascending p-value)
 ```{r}
 # Feature Selection on SMOTE-balanced Data
-
 labels_factor <- factor(metadata_train$grade, levels = c("Normal", "Grade1", "Grade2", "Grade3"))
 design <- model.matrix(~ 0 + labels_factor)
 colnames(design) <- levels(labels_factor)
@@ -224,108 +315,266 @@ print(names(top_gene_sets))
 # SVM KNN RF (different TOP Genes and different K-fold cv)
 ```{r}
 library(caret)
+library(ggplot2)
+library(tidyr)
+
 set.seed(123)
-
 results <- list()
-cv_folds <- c(5, 10)
+cv_folds <- 5  
 
-# SMOTE balanced labels
 y_train <- as.factor(metadata_train$grade)
 levels(y_train) <- make.names(levels(y_train))
+y_test <- make.names(metadata_test$grade)
+
+acc_list <- list()        
+summary_list <- list()     
 
 for (gene_set_name in names(top_gene_sets)) {
   
   gene_set <- top_gene_sets[[gene_set_name]]
-  
   x_train <- t(expr_balanced[gene_set, , drop = FALSE])
+  x_test  <- t(expr_test[gene_set, , drop = FALSE])
   
-  x_test <- t(expr_test[gene_set, , drop = FALSE])
-  y_test <- labels_test
+  trctrl <- trainControl(
+    method = "cv",
+    number = cv_folds,
+    classProbs = TRUE,
+    savePredictions = "final"
+  )
   
-  results[[gene_set_name]] <- list()
+  # Model training
+  svm_mod <- train(x = x_train, y = y_train, method = "svmLinear", trControl = trctrl, tuneGrid = data.frame(C = 1))
+  knn_mod <- train(x = x_train, y = y_train, method = "knn", trControl = trctrl, tuneGrid = expand.grid(k = 5:10))
+  rf_mod  <- train(x = x_train, y = y_train, method = "rf",  trControl = trctrl, ntree = 100)
   
-  for (cv in cv_folds) {
+  # ---------- 1. Save the cross-validation results ----------
+  acc_list[[length(acc_list) + 1]] <- data.frame(GeneSet = gene_set_name, Model = "SVM", Accuracy = svm_mod$resample$Accuracy)
+  acc_list[[length(acc_list) + 1]] <- data.frame(GeneSet = gene_set_name, Model = "KNN", Accuracy = knn_mod$resample$Accuracy)
+  acc_list[[length(acc_list) + 1]] <- data.frame(GeneSet = gene_set_name, Model = "RF",  Accuracy = rf_mod$resample$Accuracy)
+  
+  # ---------- 2. Test set evaluation ----------
+  test_preds <- list(
+    SVM = predict(svm_mod, x_test),
+    KNN = predict(knn_mod, x_test),
+    RF  = predict(rf_mod,  x_test)
+  )
+  
+  for (model_name in names(test_preds)) {
+    pred <- factor(test_preds[[model_name]], levels = unique(y_test))
+    truth <- factor(y_test, levels = unique(y_test))
+    cm <- confusionMatrix(pred, truth)
     
-    trctrl <- trainControl(
-      method = "cv",
-      number = cv,
-      classProbs = TRUE,
-      savePredictions = "final"
+    acc <- cm$overall["Accuracy"]
+    kappa <- cm$overall["Kappa"]
+    macro_f1 <- mean(cm$byClass[, "F1"], na.rm = TRUE)
+    
+    summary_list[[length(summary_list) + 1]] <- data.frame(
+      GeneSet = gene_set_name,
+      Model = model_name,
+      Accuracy = round(acc, 4),
+      MacroF1 = round(macro_f1, 4),
+      Kappa = round(kappa, 4)
     )
     
-    # --------- SVM ---------
-    svm_mod <- train(
-      x = x_train,
-      y = y_train,
-      method = "svmLinear",
-      trControl = trctrl,
-      tuneGrid = data.frame(C = 1)
-    )
-    
-    # --------- KNN ---------
-    knn_mod <- train(
-      x = x_train,
-      y = y_train,
-      method = "knn",
-      trControl = trctrl,
-      tuneGrid = expand.grid(k = 5:10)
-    )
-    
-    # --------- Random Forest ---------
-    rf_mod <- train(
-      x = x_train,
-      y = y_train,
-      method = "rf",
-      trControl = trctrl,
-      ntree = 100
-    )
-    
-    results[[gene_set_name]][[paste0("CV", cv)]] <- list(
-      SVM = svm_mod$resample$Accuracy,
-      KNN = knn_mod$resample$Accuracy,
-      RF  = rf_mod$resample$Accuracy
-    )
-    
-    cat("\n====", gene_set_name, "with", cv, "-fold CV ====\n")
-    cat("SVM Mean Acc:", round(mean(svm_mod$resample$Accuracy), 3), "\n")
-    cat("KNN Mean Acc:", round(mean(knn_mod$resample$Accuracy), 3), "\n")
-    cat("RF  Mean Acc:",  round(mean(rf_mod$resample$Accuracy), 3), "\n")
-    
-    # ========= Make predictions on the real test set =========
-    pred_svm <- predict(svm_mod, newdata = x_test)
-    pred_knn <- predict(knn_mod, newdata = x_test)
-    pred_rf  <- predict(rf_mod, newdata = x_test)
-    
-    cat("==== Test set Evaluation ====\n")
-    cat("SVM  - Accuracy:", round(confusionMatrix(pred_svm, y_test)$overall["Accuracy"], 3), "\n")
-    cat("KNN  - Accuracy:", round(confusionMatrix(pred_knn, y_test)$overall["Accuracy"], 3), "\n")
-    cat("RF   - Accuracy:", round(confusionMatrix(pred_rf,  y_test)$overall["Accuracy"], 3), "\n")
+    cat("\n======", gene_set_name, "-", model_name, "======\n")
+    print(cm$table)
+    cat("Test Accuracy:", round(acc, 3), "| Kappa:", round(kappa, 3), "| Macro F1:", round(macro_f1, 3), "\n")
   }
 }
 
-par(mfrow = c(2, 2)) 
-for (gene_set_name in names(results)) {
-  boxplot(
-    results[[gene_set_name]]$CV5,
-    main = paste(gene_set_name, "- 5-Fold CV"),
-    ylab = "Accuracy",
-    col = c("lightgray", "lightblue", "lightgreen")
-  )
+acc_df <- do.call(rbind, acc_list)
+summary_df <- do.call(rbind, summary_list)
+desired_order <- c("top30", "top50", "top80", "top110")
+acc_df$GeneSet <- factor(acc_df$GeneSet, levels = desired_order)
+summary_df$GeneSet <- factor(summary_df$GeneSet, levels = desired_order)
+
+# -------- Plot the CV accuracy boxplot --------
+ggplot(acc_df, aes(x = GeneSet, y = Accuracy, fill = Model)) +
+  geom_boxplot(position = position_dodge(0.8), outlier.shape = NA) +
+  geom_jitter(position = position_jitterdodge(jitter.width = 0.2, dodge.width = 0.8), size = 1, alpha = 0.6) +
+  labs(
+    title = "Model Accuracy (Linear selection)",
+    x = "Top Gene Set",
+    y = "Cross-validated Accuracy"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "top")
+
+# -------- Plot the Test evaluation metric bar chart --------
+eval_long <- pivot_longer(summary_df, cols = c("Accuracy", "MacroF1", "Kappa"),
+                          names_to = "Metric", values_to = "Value")
+
+ggplot(eval_long, aes(x = GeneSet, y = Value, fill = Model)) +
+  geom_col(position = position_dodge(0.8)) +
+  facet_wrap(~ Metric, scales = "free_y") +
+  labs(
+    title = "Test Set Evaluation: Accuracy, Macro F1, Kappa",
+    x = "Top Gene Set",
+    y = "Metric"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "top")
+
+
+```
+
+## Nonlinear feature selection: ANOVA + paired t-test
+```{r}
+group <- metadata_train$grade
+expr <- expr_balanced  # rows = genes, cols = samples
+
+anova_pvals <- apply(expr, 1, function(gene_expr) {
+  fit <- aov(gene_expr ~ group)
+  summary(fit)[[1]][["Pr(>F)"]][1]
+})
+
+# Preserve the genes with ANOVA p < 0.05
+sig_anova_genes <- names(anova_pvals[anova_pvals < 0.05])
+
+# Paired t-test function
+get_pairwise_t <- function(expr, group) {
+  pairs <- combn(unique(group), 2, simplify = FALSE)
+  pvals <- matrix(NA, nrow = length(sig_anova_genes), ncol = length(pairs),
+                  dimnames = list(sig_anova_genes, sapply(pairs, function(p) paste(p, collapse = "_vs_"))))
+  
+  for (i in seq_along(pairs)) {
+    p <- pairs[[i]]
+    g1 <- p[1]
+    g2 <- p[2]
+    
+    pvals[, i] <- sapply(sig_anova_genes, function(gene) {
+      x1 <- expr[gene, group == g1]
+      x2 <- expr[gene, group == g2]
+      if (length(x1) > 1 && length(x2) > 1) {
+        t.test(x1, x2)$p.value
+      } else {
+        NA
+      }
+    })
+  }
+  
+  pvals
 }
+
+pairwise_pvals <- get_pairwise_t(expr, group)
+
+# Select the genes with p < 0.05 in any pairwise t
+sig_genes_final <- rownames(pairwise_pvals)[apply(pairwise_pvals, 1, function(x) any(x < 0.05, na.rm = TRUE))]
+
+final_pval_order <- anova_pvals[sig_genes_final]
+sig_genes_sorted <- names(sort(final_pval_order))
+
+top_gene_sets_nonliner <- list()
+if (length(sig_genes_sorted) >= 30)  top_gene_sets_nonliner$top30  <- sig_genes_sorted[1:30]
+if (length(sig_genes_sorted) >= 50)  top_gene_sets_nonliner$top50  <- sig_genes_sorted[1:50]
+if (length(sig_genes_sorted) >= 80)  top_gene_sets_nonliner$top80  <- sig_genes_sorted[1:80]
+if (length(sig_genes_sorted) >= 110) top_gene_sets_nonliner$top110 <- sig_genes_sorted[1:110]
+
+cat("Available gene sets (ANOVA + t-test based):\n")
+print(names(top_gene_sets_nonliner))
 
 ```
 
 ```{r}
-par(mfrow = c(2, 2)) 
+library(caret)
+library(ggplot2)
+library(tidyr)
 
-for (gene_set_name in names(results)) {
+set.seed(123)
+results <- list()
+cv_folds <- 5  
+
+y_train <- as.factor(metadata_train$grade)
+levels(y_train) <- make.names(levels(y_train))
+y_test <- make.names(metadata_test$grade)
+
+acc_list <- list()        
+summary_list <- list()     
+
+for (gene_set_name in names(top_gene_sets_nonliner)) {
   
-  # ---- 10-fold ----
-  boxplot(
-    results[[gene_set_name]]$CV10,
-    main = paste(gene_set_name, "- 10-Fold CV"),
-    ylab = "Accuracy",
-    col = c("lightgray", "lightblue", "lightgreen")
+  gene_set <- top_gene_sets_nonliner[[gene_set_name]]
+  x_train <- t(expr_balanced[gene_set, , drop = FALSE])
+  x_test  <- t(expr_test[gene_set, , drop = FALSE])
+  
+  trctrl <- trainControl(
+    method = "cv",
+    number = cv_folds,
+    classProbs = TRUE,
+    savePredictions = "final"
   )
+  
+  # Model training
+  svm_mod <- train(x = x_train, y = y_train, method = "svmLinear", trControl = trctrl, tuneGrid = data.frame(C = 1))
+  knn_mod <- train(x = x_train, y = y_train, method = "knn", trControl = trctrl, tuneGrid = expand.grid(k = 5:10))
+  rf_mod  <- train(x = x_train, y = y_train, method = "rf",  trControl = trctrl, ntree = 100)
+  
+  # ---------- 1. Save the cross-validation results ----------
+  acc_list[[length(acc_list) + 1]] <- data.frame(GeneSet = gene_set_name, Model = "SVM", Accuracy = svm_mod$resample$Accuracy)
+  acc_list[[length(acc_list) + 1]] <- data.frame(GeneSet = gene_set_name, Model = "KNN", Accuracy = knn_mod$resample$Accuracy)
+  acc_list[[length(acc_list) + 1]] <- data.frame(GeneSet = gene_set_name, Model = "RF",  Accuracy = rf_mod$resample$Accuracy)
+  
+  # ---------- 2. Test set evaluation ----------
+  test_preds <- list(
+    SVM = predict(svm_mod, x_test),
+    KNN = predict(knn_mod, x_test),
+    RF  = predict(rf_mod,  x_test)
+  )
+  
+  for (model_name in names(test_preds)) {
+    pred <- factor(test_preds[[model_name]], levels = unique(y_test))
+    truth <- factor(y_test, levels = unique(y_test))
+    cm <- confusionMatrix(pred, truth)
+    
+    acc <- cm$overall["Accuracy"]
+    kappa <- cm$overall["Kappa"]
+    macro_f1 <- mean(cm$byClass[, "F1"], na.rm = TRUE)
+    
+    summary_list[[length(summary_list) + 1]] <- data.frame(
+      GeneSet = gene_set_name,
+      Model = model_name,
+      Accuracy = round(acc, 4),
+      MacroF1 = round(macro_f1, 4),
+      Kappa = round(kappa, 4)
+    )
+    
+    cat("\n======", gene_set_name, "-", model_name, "======\n")
+    print(cm$table)
+    cat("Test Accuracy:", round(acc, 3), "| Kappa:", round(kappa, 3), "| Macro F1:", round(macro_f1, 3), "\n")
+  }
 }
+
+acc_df <- do.call(rbind, acc_list)
+summary_df <- do.call(rbind, summary_list)
+desired_order <- c("top30", "top50", "top80", "top110")
+acc_df$GeneSet <- factor(acc_df$GeneSet, levels = desired_order)
+summary_df$GeneSet <- factor(summary_df$GeneSet, levels = desired_order)
+
+# -------- Plot the CV accuracy boxplot --------
+ggplot(acc_df, aes(x = GeneSet, y = Accuracy, fill = Model)) +
+  geom_boxplot(position = position_dodge(0.8), outlier.shape = NA) +
+  geom_jitter(position = position_jitterdodge(jitter.width = 0.2, dodge.width = 0.8), size = 1, alpha = 0.6) +
+  labs(
+    title = "Model Accuracy (Non-Linear selection)",
+    x = "Top Gene Set",
+    y = "Cross-validated Accuracy"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "top")
+
+# -------- Plot the Test evaluation metric bar chart --------
+eval_long <- pivot_longer(summary_df, cols = c("Accuracy", "MacroF1", "Kappa"),
+                          names_to = "Metric", values_to = "Value")
+
+ggplot(eval_long, aes(x = GeneSet, y = Value, fill = Model)) +
+  geom_col(position = position_dodge(0.8)) +
+  facet_wrap(~ Metric, scales = "free_y") +
+  labs(
+    title = "Test Set Evaluation: Accuracy, Macro F1, Kappa",
+    x = "Top Gene Set",
+    y = "Metric"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "top")
 ```
+
