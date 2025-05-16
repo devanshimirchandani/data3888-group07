@@ -1,5 +1,5 @@
 ---
-title: "COMBINED V2"
+title: "malay"
 output: html_document
 date: "2025-05-06"
 ---
@@ -21,7 +21,7 @@ library(sva)
 ```
 
 ```{r include=FALSE}
-gse <- getGEO("GSE17907")
+gse <- getGEO("GSE15852")
 gse10810 <- gse[[1]]
 ```
 
@@ -45,15 +45,15 @@ standardize_grade <- function(grades, pattern, replacements, remove_na = TRUE) {
   return(grades)
 }
 
-### GSE17907
-pdata17907 <- pData(gse17907)
-grades17907 <- pdata17907$`grade sbr:ch1`
-pdata17907$grade <- standardize_grade(
-  grades17907,
-  c("--"),
-  c("0")
+### GSE15852
+pdata15852 <- pData(gse15852)
+grades15852 <- pdata15852$`characteristics_ch1.2`
+pdata15852$grade <- standardize_grade(
+  grades15852,
+  c("grade: normal", "grade: grade 1", "grade: grade 2", "grade: grade 3"),
+  c("0", "1", "2", "3")
 )
-pdata17907 <- pdata17907[!is.na(pdata17907$grade), ]
+pdata15852 <- pdata15852[!is.na(pdata15852$grade), ]
 
 
 ```
@@ -61,8 +61,7 @@ pdata17907 <- pdata17907[!is.na(pdata17907$grade), ]
 ```{r}
 #Put the first five into the list
 pdata_list <- list(
-  GSE10810 = pdata10810,
-  GSE17907 = pdata17907
+  GSE15852 = pdata15852
 )
 
 required_grades <- c("Normal", "Grade1", "Grade2", "Grade3")
@@ -95,7 +94,7 @@ process_eset <- function(eset, min_avg_expr = 5) {
 }
 
 # Apply to each dataset and keep same names
-gse17907 <- process_eset(gse17907)
+gse17907 <- process_eset(gse15852)
 
 ```
 
@@ -104,12 +103,12 @@ gse17907 <- process_eset(gse17907)
 # 1. Expression sets
 expr_list <- list(
 
-  gse17907 = exprs(gse17907)
+  gse15852 = exprs(gse15852)
 )
 
 # 2. Phenotype sets
 pdata_list <- list(
-  pdata17907
+  pdata15852
 )
 
 # 3. Fix phenotype rownames using geo_accession if present
@@ -123,12 +122,12 @@ pdata_list <- lapply(pdata_list, function(p) {
 # Reassign corrected pdata
 
 # 1. Assign pdata
-pdata17907 <- pdata_list[[1]]
+pdata15852 <- pdata_list[[1]]
 
 
 # 2. Create pheno_list with dataset names
 pheno_list <- list(
-  gse17907 = pdata17907
+  gse15852 = pdata15852
 )
 
 # 3. Extract grade list and track batch
