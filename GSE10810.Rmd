@@ -1,9 +1,12 @@
 ---
-title: "COMBINED V2"
-output: html_document
-date: "2025-05-06"
+output:
+  html_document:
+    code_folding: hide
+    toc: true
+    toc_depth: 2
+    toc_float: true
+    theme: readable
 ---
-
 ```{r include=FALSE}
 library(GEOquery) 
 library(R.utils)
@@ -11,41 +14,35 @@ library(reshape2)
 library(ggplot2)
 library(limma)
 library(dplyr)
-library(Biobase)
-library(dplyr)
-library(caret)
-library(e1071)  # for SVM
-library(randomForest)
-library(edgeR)
-library(sva)
-```
+library(tidyr)
 
-```{r include=FALSE}
 gse <- getGEO("GSE10810")
 gse10810 <- gse[[1]]
 ```
+# Data Processing
+## Check for NA values, The size of the dataset
+```{r echo=FALSE}
 
+f = fData(gse10810)
+dim(gse10810)
+```
+## extract and standardize grade into correct names
 ```{r}
-# Function to extract and standardize grade into correct names
+library(Biobase)
+
 standardize_grade <- function(grades, pattern, replacements, remove_na = TRUE) {
   grades <- tolower(grades)
   for (i in seq_along(pattern)) {
     grades <- gsub(pattern[i], replacements[i], grades)
   }
-  grades <- gsub(".*(\\b[0-3]\\b).*", "\\1", grades)  # Extract grade number if embedded
-  grades[!grades %in% c("0", "1", "2", "3")] <- NA     # Drop anything unexpected
-  if (remove_na) {
-    grades <- as.numeric(grades)
-  }
-  
-  # Map grades to full names
+  grades <- gsub(".*(\\b[0-3]\\b).*", "\\1", grades)  
+  grades[!grades %in% c("0", "1", "2", "3")] <- NA
+  if (remove_na) grades <- as.numeric(grades)
   grade_names <- c("0" = "Normal", "1" = "Grade1", "2" = "Grade2", "3" = "Grade3")
-  grades <- grade_names[as.character(grades)]  # Map numbers to grade names
-  
+  grades <- grade_names[as.character(grades)]
   return(grades)
 }
 
-### GSE10810
 pdata10810 <- pData(gse10810)
 grades10810 <- pdata10810$characteristics_ch1.3
 # Patterns to handle: "grade: 0", "grade: i", "grade: ii", "grade: iii"
@@ -54,141 +51,17 @@ pdata10810$grade <- standardize_grade(
   c("grade: 0", "grade: i\\b", "grade: ii\\b", "grade: iii\\b"),
   c("0", "1", "2", "3")
 )
-pdata10810 <- pdata10810[!is.na(pdata10810$grade), ]
 
+keep <- !is.na(pdata10810$grade)
+pdata10810 <- pdata10810[keep, ]
+
+expr10810 <- exprs(gse10810)[, keep]
+
+stopifnot(all(rownames(pdata10810) == colnames(expr10810)))
+table(pdata10810$grade)
 ```
 
-```{r}
-#Put the first five into the list
-pdata_list <- list(
-  GSE10810 = pdata10810,
-  GSE17907 = pdata17907
-)
-
-required_grades <- c("Normal", "Grade1", "Grade2", "Grade3")
-
-qualified_datasets <- names(Filter(function(pdata) {
-  all(required_grades %in% pdata$grade)
-}, pdata_list))
-
-cat("Datasets containing all four grades:", paste(qualified_datasets, collapse = ", "), "\n")
-
-```
-
-
-```{r}
-# Helper function to process ExpressionSet
-process_eset <- function(eset, min_avg_expr = 5) {
-  exprs_mat <- exprs(eset)
-  
-  # Filter lowly expressed genes
-  keep_exprs <- rowMeans(exprs_mat) >= min_avg_expr
-  exprs_mat <- exprs_mat[keep_exprs, , drop = FALSE]
-  
-  # Remove duplicate genes (based on rownames)
-  unique_rows <- !duplicated(rownames(exprs_mat))
-  exprs_mat <- exprs_mat[unique_rows, , drop = FALSE]
-
-  # Subset the ExpressionSet to match filtered expression matrix
-  eset_filtered <- eset[rownames(exprs_mat), ]
-  return(eset_filtered)
-}
-
-# Apply to each dataset and keep same names
-gse10810 <- process_eset(gse10810)
-
-```
-
-```{r}
-
-# 1. Expression sets
-expr_list <- list(
-
-  gse10810 = exprs(gse10810)
-)
-
-# 2. Phenotype sets
-pdata_list <- list(
-  pdata10810
-)
-
-# 3. Fix phenotype rownames using geo_accession if present
-pdata_list <- lapply(pdata_list, function(p) {
-  if ("geo_accession" %in% colnames(p)) {
-    rownames(p) <- p$geo_accession
-  }
-  return(p)
-})
-
-# Reassign corrected pdata
-
-# 1. Assign pdata
-pdata10810 <- pdata_list[[1]]
-
-
-# 2. Create pheno_list with dataset names
-pheno_list <- list(
-  gse10810 = pdata10810
-)
-
-# 3. Extract grade list and track batch
-grade_list <- Map(function(expr, pheno, batch_name) {
-  sample_names <- colnames(expr)
-  matched_pheno <- pheno[sample_names, , drop = FALSE]
-  grades <- matched_pheno$grade
-  names(grades) <- sample_names
-  # Track batch
-  data.frame(
-    sample = sample_names,
-    grade = grades,
-    batch = batch_name,
-    stringsAsFactors = FALSE
-  )
-}, expr_list, pheno_list, names(pheno_list))
-
-# 4. Combine all grade + batch info into metadata
-metadata <- do.call(rbind, grade_list)
-
-# 5. Clean sample names to remove prefixes (e.g., "gse10810.")
-metadata$sample <- sub(".*\\.", "", metadata$sample)
-
-# 6. Combine expression matrices
-expr_dfs <- lapply(expr_list, function(mat) {
-  df <- as.data.frame(mat)
-  df$gene <- rownames(mat)
-  df
-})
-
-merged_expr <- Reduce(function(x, y) full_join(x, y, by = "gene"), expr_dfs)
-rownames(merged_expr) <- merged_expr$gene
-merged_expr$gene <- NULL
-
-# 7. Ensure metadata matches expression matrix columns
-colnames(merged_expr) <- sub(".*\\.", "", colnames(merged_expr))  # Match cleaned sample names
-metadata <- metadata[match(colnames(merged_expr), metadata$sample), ]
-
-# 8. Final check
-stopifnot(all(metadata$sample == colnames(merged_expr)))
-
-# ✅ Outputs
-metadata
-```
-
-```{r}
-
-
-metadata <- metadata[!is.na(metadata$grade), ]
-metadata
-# 🧼 Remove corresponding columns from merged_expr
-gse10810 <- merged_expr[, metadata$sample]
-anyNA(merged_expr)
-sum(is.na(merged_expr))
-merged_expr <- merged_expr[complete.cases(merged_expr), ]
-merged_expr
-
-table(metadata$grade)
-```
-
+## Removing lowly expressed genes
 ```{r}
 library(edgeR)
 library(ggplot2)
@@ -197,81 +70,175 @@ library(magrittr)
 library(cowplot)
 library(dplyr)
 
-dge <- DGEList(counts = merged_expr)
-## A common guideline is to filter so that we retain genes expressed at least 1 cpm in the smallest group of samples
-min_group_size <- min(table(metadata$grade))
-keepTheseGenes <- rowSums(cpm(dge) > 1) >= min_group_size
+if (!"sample" %in% colnames(pdata10810)) {
+  pdata10810$sample <- rownames(pdata10810)
+}
 
+dge <- DGEList(counts = expr10810)
+
+min_group_size <- min(table(pdata10810$grade))
+
+keepTheseGenes <- rowSums(cpm(dge) > 1) >= min_group_size
 
 beforeFiltering_plot <- dge %>% 
   cpm(log = TRUE) %>% 
-  melt %>% 
-  dplyr::filter(is.finite(value)) %>% 
+  melt() %>% 
+  filter(is.finite(value)) %>% 
   ggplot(aes(x = value, colour = Var2)) +
-  geom_density() + 
-  guides(colour = FALSE) +
-  ggtitle("A. Before filtering", subtitle = paste0(nrow(dge), " genes")) +
-  labs(x = "logCPM", y = "Density")
+    geom_density() +
+    guides(colour = FALSE) +
+    ggtitle("A. Before filtering", 
+            subtitle = paste0(nrow(dge), " genes")) +
+    labs(x = "logCPM", y = "Density")
 
 afterFiltering_plot <- dge %>% 
-  cpm(log = TRUE) %>% 
-  magrittr::extract(keepTheseGenes, ) %>%
-  melt %>% 
-  dplyr::filter(is.finite(value)) %>% 
+  cpm(log = TRUE) %>%
+  magrittr::extract(keepTheseGenes, , drop = FALSE) %>%
+  melt() %>% 
+  filter(is.finite(value)) %>% 
   ggplot(aes(x = value, colour = Var2)) +
-  geom_density() + 
-  guides(colour = FALSE) +
-  ggtitle("B. After filtering", subtitle = paste0(sum(keepTheseGenes), " genes")) +
-  labs(x = "logCPM", y = "Density")
+    geom_density() +
+    guides(colour = FALSE) +
+    ggtitle("B. After filtering", 
+            subtitle = paste0(sum(keepTheseGenes), " genes")) +
+    labs(x = "logCPM", y = "Density")
 
 cowplot::plot_grid(beforeFiltering_plot, afterFiltering_plot)
 
-merged_expr_filtered <- merged_expr[keepTheseGenes, ]
+expr10810_filtered <- expr10810[keepTheseGenes, ]
 
-metadata <- metadata[metadata$sample %in% colnames(merged_expr_filtered), ]
-merged_expr_filtered <- merged_expr_filtered[, metadata$sample]
-stopifnot(all(colnames(merged_expr_filtered) == metadata$sample))
+
+pdata10810_filtered <- pdata10810 %>% 
+  filter(sample %in% colnames(expr10810_filtered))
+
+expr10810_filtered <- expr10810_filtered[, pdata10810_filtered$sample]
+
+stopifnot(all(colnames(expr10810_filtered) == pdata10810_filtered$sample))
+
+# - expr10810_filtered：A matrix containing only highly expressed genes
+# - pdata10810_filtered：pData that only contains these samples
 
 ```
 
-## split train and test
+## PCA Plot(use filtering genes)
 ```{r}
+samples_to_keep <- intersect(
+  colnames(expr10810_filtered),
+  rownames(pdata10810_filtered)
+)
+
+expr_mat <- expr10810_filtered[, samples_to_keep]
+pdata_sub <- pdata10810_filtered[samples_to_keep, , drop = FALSE]
+
+expr_for_pca <- t(expr_mat)
+
+grade_fac <- factor(
+  pdata_sub$grade,
+  levels = c("Normal", "Grade1", "Grade2", "Grade3")
+)
+
+pca_res <- prcomp(expr_for_pca, center = TRUE, scale. = TRUE)
+
+pca_df <- data.frame(
+  PC1   = pca_res$x[, 1],
+  PC2   = pca_res$x[, 2],
+  Grade = grade_fac
+)
+
+library(ggplot2)
+ggplot(pca_df, aes(x = PC1, y = PC2, color = Grade)) +
+  geom_point(size = 3, alpha = 0.8) +
+  stat_ellipse(type = "norm", linetype = 2) +
+  theme_bw() +
+  labs(
+    title = "PCA of Samples by Grade",
+    x     = paste0("PC1 (", round(100 * summary(pca_res)$importance[2, 1], 1), "%)"),
+    y     = paste0("PC2 (", round(100 * summary(pca_res)$importance[2, 2], 1), "%)")
+  ) +
+  theme(
+    legend.position = "right",
+    plot.title     = element_text(hjust = 0.5)
+  )
+
+
+```
+
+## 80/20 Train/Test Split 
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+library(caret)
+library(lattice)
+
 set.seed(123)
-split_by_grade <- split(metadata, metadata$grade)
+
+metadata_pf <- pdata10810_filtered
+expr_pf     <- expr10810_filtered
+
+split_by_grade <- split(metadata_pf, metadata_pf$grade)
 
 train_samples <- unlist(lapply(split_by_grade, function(df) {
   n <- nrow(df)
-  if (n >= 2) {
-    sample(df$sample, size = floor(0.8 * n))  
-  } else {
-    sample(df$sample, size = 1)  
-  }
+  size <- if (n >= 2) floor(0.8 * n) else 1
+  sample(df$sample, size = size)
 }))
 
-test_samples <- setdiff(metadata$sample, train_samples)
+test_samples <- setdiff(metadata_pf$sample, train_samples)
 
-# ========== 6. Extract the expression matrix and metadata ==========
-expr_train <- merged_expr_filtered[, train_samples]
-expr_test  <- merged_expr_filtered[, test_samples]
+expr_train <- expr_pf[, train_samples]
+expr_test  <- expr_pf[, test_samples]
 
-metadata_train <- metadata[match(train_samples, metadata$sample), ]
-metadata_test  <- metadata[match(test_samples, metadata$sample), ]
+metadata_train <- metadata_pf[match(train_samples, metadata_pf$sample), ]
+metadata_test  <- metadata_pf[match(test_samples,  metadata_pf$sample), ]
 
-metadata_train$grade <- factor(metadata_train$grade,
-                               levels = c("Normal", "Grade1", "Grade2", "Grade3"))
-metadata_test$grade <- factor(metadata_test$grade,
-                              levels = c("Normal", "Grade1", "Grade2", "Grade3"))
+grade_levels <- c("Normal", "Grade1", "Grade2", "Grade3")
+metadata_train$grade <- factor(metadata_train$grade, levels = grade_levels)
+metadata_test$grade  <- factor(metadata_test$grade,  levels = grade_levels)
 
 levels(metadata_train$grade) <- make.names(levels(metadata_train$grade))
 levels(metadata_test$grade)  <- make.names(levels(metadata_test$grade))
-
 
 cat("Training set grade counts:\n")
 print(table(metadata_train$grade))
 cat("Test set grade counts:\n")
 print(table(metadata_test$grade))
 
-expr_balanced <- expr_train
+```
+# Applying SMOTE to Balance Tumor Grade Classes
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+library(smotefamily)
+
+# Transpose so samples are rows
+expr_t <- t(expr_train)
+expr_df <- as.data.frame(expr_t)
+expr_df$grade <- metadata_train$grade[match(rownames(expr_df), metadata_train$sample)]
+
+# Convert grade to factor
+expr_df$grade <- as.factor(expr_df$grade)
+
+# Apply SMOTE (over-sampling only)
+# dup_size controls how many synthetic samples to make per minority sample
+smote_result <- SMOTE(X = expr_df[, -ncol(expr_df)],
+                      target = expr_df$grade,
+                      K = 1,
+                      dup_size = 5)  # try 5–10
+
+# SMOTE returns a list with $data
+expr_smote <- smote_result$data
+
+# Extract new metadata and expression matrix
+metadata_train <- data.frame(
+  sample = paste0("SMOTE_", seq_len(nrow(expr_smote))),
+  grade = expr_smote$class
+)
+
+expr_balanced <- t(as.matrix(expr_smote[, -ncol(expr_smote)]))
+colnames(expr_balanced) <- metadata_train$sample
+
+metadata_train$grade <- factor(
+  expr_smote$class,
+  levels = c("Normal", "Grade1", "Grade2", "Grade3")
+)
+
+table(metadata_train$grade)
 
 ```
 
@@ -289,15 +256,8 @@ res <- topTable(fit, number = Inf, adjust.method = "BH")
 # Significant genes (adjusted p < 0.05)
 sig_genes <- rownames(subset(res, adj.P.Val < 0.05))
 
-# Group means and strong difference filtering (max - min > 1)
-group_means <- sapply(levels(labels_factor), function(lv) {
-  rowMeans(expr_balanced[, metadata_train$grade == lv, drop = FALSE])
-})
-expr_diff <- apply(group_means, 1, function(x) max(x) - min(x))
-sig_genes_strong <- sig_genes[expr_diff[sig_genes] > 1]
-
 # Sort by adjusted p-value
-res_sig_strong <- res[sig_genes_strong, ]
+res_sig_strong <- res[sig_genes, ]
 res_sig_strong <- res_sig_strong[order(res_sig_strong$adj.P.Val), ]
 
 # Build top gene sets only if enough genes exist
@@ -310,7 +270,6 @@ if (nrow(res_sig_strong) >= 110) top_gene_sets$top110 <- rownames(res_sig_strong
 # Optional: show available gene set sizes
 cat("Available gene sets:\n")
 print(names(top_gene_sets))
-
 ```
 # SVM KNN RF (different TOP Genes and different K-fold cv)
 ```{r}
@@ -407,17 +366,21 @@ eval_long <- pivot_longer(summary_df, cols = c("Accuracy", "MacroF1", "Kappa"),
 ggplot(eval_long, aes(x = GeneSet, y = Value, fill = Model)) +
   geom_col(position = position_dodge(0.8)) +
   facet_wrap(~ Metric, scales = "free_y") +
+  geom_text(
+    aes(label = sprintf("%.2f", Value)),
+    position = position_dodge(width = 0.8),
+    vjust = -0.5,
+    size = 1.6
+  ) +
   labs(
-    title = "Test Set Evaluation: Accuracy, Macro F1, Kappa",
+    title = "Test Set Evaluation(Linear): Accuracy, Macro F1, Kappa",
     x = "Top Gene Set",
     y = "Metric"
   ) +
   theme_minimal(base_size = 13) +
   theme(legend.position = "top")
 
-
 ```
-
 ## Nonlinear feature selection: ANOVA + paired t-test
 ```{r}
 group <- metadata_train$grade
@@ -568,13 +531,20 @@ eval_long <- pivot_longer(summary_df, cols = c("Accuracy", "MacroF1", "Kappa"),
 
 ggplot(eval_long, aes(x = GeneSet, y = Value, fill = Model)) +
   geom_col(position = position_dodge(0.8)) +
+  geom_text(
+    aes(label = sprintf("%.2f", Value)),
+    position = position_dodge(width = 0.8),
+    vjust = -0.5,
+    size = 1.6
+  ) +
   facet_wrap(~ Metric, scales = "free_y") +
   labs(
-    title = "Test Set Evaluation: Accuracy, Macro F1, Kappa",
+    title = "Test Set Evaluation (Nonlinear): Accuracy, Macro F1, Kappa",
     x = "Top Gene Set",
     y = "Metric"
   ) +
   theme_minimal(base_size = 13) +
-  theme(legend.position = "top")
-```
+  theme(legend.position = "top") +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.1)))
 
+```
