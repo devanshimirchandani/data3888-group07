@@ -1182,7 +1182,41 @@ server <- function(input, output, session) {
                                           tabsetPanel(id = "module1_lo1_subtabs", type = "tabs",
                                                       tabPanel("Breast Cancer", 
                                                                h2("Why Focus on Breast Cancer?"),
-                                                               p("Coming soon")
+                                                               
+                                                               p("One in seven Australian women are predicted to receive a breast cancer diagnosis in their lives. This makes it the most prevalent cancer among women (Cancer Australia, 2024). Even though, five years after diagnosis, survival rates have increased to over 92%, early detection is still essential."),
+                                                               
+                                                               p("Measuring gene expression activity plays a vital role in targeted diagnosis and treatment. This demonstrates that breast cancer is not a single disease but rather has several subtypes with different gene expression combinations (Reis-Filho & Pusztai, 2011)."),
+                                                               
+                                                               p("About 20% of the genetic risk in cases with a family history can be explained by inherited mutations in high-risk genes, such as TP53, BRCA1, and BRCA2 (Wendt & Margolin, 2019). These genes and more than 180 other low-risk loci have been found to help predict susceptibility to breast cancer and customise treatment. This highlights the importance of incorporating genetic data into cancer care (Lindblom, 1995)."),
+                                                               
+                                                               p("This is where Preva comes in."),
+                                                               
+                                                               tags$b("Reference List:"),
+                                                               tags$ul(
+                                                                 tags$li(
+                                                                   a("Cancer Australia. (2024). Breast cancer in Australia statistics.",
+                                                                     href = "https://www.canceraustralia.gov.au/cancer-types/breast-cancer/breast-cancer-australia-statistics", target = "_blank")
+                                                                 ),
+                                                                 tags$li(
+                                                                   a("Giaquinto et al. (2022). Breast cancer statistics, 2022. CA: A Cancer Journal for Clinicians.",
+                                                                     href = "https://doi.org/10.3322/caac.21754", target = "_blank")
+                                                                 ),
+                                                                 tags$li(
+                                                                   a("Lindblom, A. (1995). Familial breast cancer and genes involved in breast carcinogenesis.",
+                                                                     href = "https://doi.org/10.1007/BF00666004", target = "_blank")
+                                                                 ),
+                                                                 tags$li(
+                                                                   a("Reis-Filho & Pusztai (2011). Gene expression profiling in breast cancer.",
+                                                                     href = "https://doi.org/10.1016/S0140-6736(11)61539-0", target = "_blank")
+                                                                 ),
+                                                                 tags$li(
+                                                                   a("Wendt & Margolin (2019). Identifying breast cancer susceptibility genes.",
+                                                                     href = "https://doi.org/10.1080/0284186X.2018.1529428", target = "_blank")
+                                                                 )
+                                                               )
+                                                               
+                                                               
+                                                               
                                                       )
                                           )
                                       )
