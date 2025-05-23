@@ -313,6 +313,43 @@ print(names(top_gene_sets))
 ```
 # SVM KNN RF (different TOP Genes and different K-fold cv)
 ```{r}
+# Feature Selection on SMOTE-balanced Data
+labels_factor <- factor(metadata_train$grade, levels = c("Normal", "Grade1", "Grade2", "Grade3"))
+design <- model.matrix(~ 0 + labels_factor)
+colnames(design) <- levels(labels_factor)
+
+fit <- lmFit(expr_balanced, design)
+fit <- eBayes(fit)
+res <- topTable(fit, number = Inf, adjust.method = "BH")
+
+# Significant genes (adjusted p < 0.05)
+sig_genes <- rownames(subset(res, adj.P.Val < 0.05))
+
+# Group means and strong difference filtering (max - min > 1)
+group_means <- sapply(levels(labels_factor), function(lv) {
+  rowMeans(expr_balanced[, metadata_train$grade == lv, drop = FALSE])
+})
+expr_diff <- apply(group_means, 1, function(x) max(x) - min(x))
+sig_genes_strong <- sig_genes[expr_diff[sig_genes] > 1]
+
+# Sort by adjusted p-value
+res_sig_strong <- res[sig_genes_strong, ]
+res_sig_strong <- res_sig_strong[order(res_sig_strong$adj.P.Val), ]
+
+# Build top gene sets only if enough genes exist
+top_gene_sets <- list()
+if (nrow(res_sig_strong) >= 30)  top_gene_sets$top30  <- rownames(res_sig_strong)[1:30]
+if (nrow(res_sig_strong) >= 50)  top_gene_sets$top50  <- rownames(res_sig_strong)[1:50]
+if (nrow(res_sig_strong) >= 80)  top_gene_sets$top80  <- rownames(res_sig_strong)[1:80]
+if (nrow(res_sig_strong) >= 110) top_gene_sets$top110 <- rownames(res_sig_strong)[1:110]
+
+# Optional: show available gene set sizes
+cat("Available gene sets:\n")
+print(names(top_gene_sets))
+
+```
+# SVM KNN RF (different TOP Genes and different K-fold cv)
+```{r}
 library(caret)
 library(ggplot2)
 library(tidyr)
@@ -331,14 +368,8 @@ summary_list <- list()
 for (gene_set_name in names(top_gene_sets)) {
   
   gene_set <- top_gene_sets[[gene_set_name]]
-  x_train <- as.data.frame(t(expr_balanced[gene_set, , drop = FALSE]))
-  x_test  <- as.data.frame(t(expr_test[gene_set, , drop = FALSE]))
-  
-  # Skip if insufficient samples for CV
-  if (nrow(x_train) < cv_folds) {
-    cat("Skipping", gene_set_name, "- insufficient samples for CV\n")
-    next
-  }
+  x_train <- t(expr_balanced[gene_set, , drop = FALSE])
+  x_test  <- t(expr_test[gene_set, , drop = FALSE])
   
   trctrl <- trainControl(
     method = "cv",
@@ -348,28 +379,23 @@ for (gene_set_name in names(top_gene_sets)) {
   )
   
   # Model training
-  svm_mod <- tryCatch(
-    train(x = x_train, y = y_train, method = "svmLinear", trControl = trctrl, tuneGrid = data.frame(C = 1)),
-    error = function(e) { warning(paste("SVM failed for", gene_set_name)); NULL }
-  )
+  svm_mod <- train(x = x_train, y = y_train, method = "svmLinear", trControl = trctrl, tuneGrid = data.frame(C = 1))
   knn_mod <- train(x = x_train, y = y_train, method = "knn", trControl = trctrl, tuneGrid = expand.grid(k = 5:10))
   rf_mod  <- train(x = x_train, y = y_train, method = "rf",  trControl = trctrl, ntree = 100)
   
-  # Save CV results
-  if (!is.null(svm_mod)) acc_list[[length(acc_list) + 1]] <- data.frame(GeneSet = gene_set_name, Model = "SVM", Accuracy = svm_mod$resample$Accuracy)
+  # ---------- 1. Save the cross-validation results ----------
+  acc_list[[length(acc_list) + 1]] <- data.frame(GeneSet = gene_set_name, Model = "SVM", Accuracy = svm_mod$resample$Accuracy)
   acc_list[[length(acc_list) + 1]] <- data.frame(GeneSet = gene_set_name, Model = "KNN", Accuracy = knn_mod$resample$Accuracy)
   acc_list[[length(acc_list) + 1]] <- data.frame(GeneSet = gene_set_name, Model = "RF",  Accuracy = rf_mod$resample$Accuracy)
   
-  # Test set evaluation
+  # ---------- 2. Test set evaluation ----------
   test_preds <- list(
-    SVM = if (!is.null(svm_mod)) predict(svm_mod, x_test) else rep(NA, nrow(x_test)),
+    SVM = predict(svm_mod, x_test),
     KNN = predict(knn_mod, x_test),
     RF  = predict(rf_mod,  x_test)
   )
   
   for (model_name in names(test_preds)) {
-    if (all(is.na(test_preds[[model_name]]))) next
-    
     pred <- factor(test_preds[[model_name]], levels = unique(y_test))
     truth <- factor(y_test, levels = unique(y_test))
     cm <- confusionMatrix(pred, truth)
@@ -377,18 +403,35 @@ for (gene_set_name in names(top_gene_sets)) {
     acc <- cm$overall["Accuracy"]
     kappa <- cm$overall["Kappa"]
     macro_f1 <- mean(cm$byClass[, "F1"], na.rm = TRUE)
+    macro_precision <- mean(cm$byClass[, "Precision"], na.rm = TRUE)
+    macro_recall <- mean(cm$byClass[, "Recall"], na.rm = TRUE)
+    bal_acc <- mean(cm$byClass[, "Balanced Accuracy"], na.rm = TRUE)
+    macro_sens <- mean(cm$byClass[, "Sensitivity"], na.rm = TRUE)
+    macro_spec <- mean(cm$byClass[, "Specificity"], na.rm = TRUE)
     
     summary_list[[length(summary_list) + 1]] <- data.frame(
       GeneSet = gene_set_name,
       Model = model_name,
       Accuracy = round(acc, 4),
       MacroF1 = round(macro_f1, 4),
+      MacroPrecision = round(macro_precision, 4),
+      MacroRecall = round(macro_recall, 4),
+      BalancedAccuracy = round(bal_acc, 4),
+      MacroSensitivity = round(macro_sens, 4),
+      MacroSpecificity = round(macro_spec, 4),
       Kappa = round(kappa, 4)
     )
     
     cat("\n======", gene_set_name, "-", model_name, "======\n")
     print(cm$table)
-    cat("Test Accuracy:", round(acc, 3), "| Kappa:", round(kappa, 3), "| Macro F1:", round(macro_f1, 3), "\n")
+    cat("Test Accuracy:", round(acc, 3), 
+        "| Kappa:", round(kappa, 3), 
+        "| Macro F1:", round(macro_f1, 3), 
+        "| Precision:", round(macro_precision, 3), 
+        "| Recall:", round(macro_recall, 3),
+        "| Sensitivity:", round(macro_sens, 3),
+        "| Specificity:", round(macro_spec, 3),
+        "| Balanced Accuracy:", round(bal_acc, 3), "\n")
   }
 }
 
@@ -398,21 +441,31 @@ desired_order <- c("top30", "top50", "top80", "top110")
 acc_df$GeneSet <- factor(acc_df$GeneSet, levels = desired_order)
 summary_df$GeneSet <- factor(summary_df$GeneSet, levels = desired_order)
 
-# CV Accuracy Boxplot
+# -------- Plot the CV accuracy boxplot --------
 ggplot(acc_df, aes(x = GeneSet, y = Accuracy, fill = Model)) +
   geom_boxplot(position = position_dodge(0.8), outlier.shape = NA) +
   geom_jitter(position = position_jitterdodge(jitter.width = 0.2, dodge.width = 0.8), size = 1, alpha = 0.6) +
-  labs(title = "Model Accuracy (Linear selection)", x = "Top Gene Set", y = "Cross-validated Accuracy") +
+  labs(
+    title = "Model Accuracy (Linear selection)",
+    x = "Top Gene Set",
+    y = "Cross-validated Accuracy"
+  ) +
   theme_minimal(base_size = 13) +
   theme(legend.position = "top")
 
-# Test Evaluation Bar Chart
-eval_long <- pivot_longer(summary_df, cols = c("Accuracy", "MacroF1", "Kappa"), names_to = "Metric", values_to = "Value")
+# -------- Plot the Test evaluation metric bar chart --------
+eval_long <- pivot_longer(summary_df, 
+                          cols = c("Accuracy", "MacroF1", "MacroPrecision", "MacroRecall", "MacroSensitivity", "MacroSpecificity", "BalancedAccuracy", "Kappa"),
+                          names_to = "Metric", values_to = "Value")
 
 ggplot(eval_long, aes(x = GeneSet, y = Value, fill = Model)) +
   geom_col(position = position_dodge(0.8)) +
   facet_wrap(~ Metric, scales = "free_y") +
-  labs(title = "Test Set Evaluation: Accuracy, Macro F1, Kappa", x = "Top Gene Set", y = "Metric") +
+  labs(
+    title = "Test Set Evaluation: Extended Metrics",
+    x = "Top Gene Set",
+    y = "Metric"
+  ) +
   theme_minimal(base_size = 13) +
   theme(legend.position = "top")
 

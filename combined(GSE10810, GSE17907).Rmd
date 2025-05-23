@@ -299,6 +299,7 @@ plot_by_batch
 plot_combined
 
 ```
+# module 2
 ```{r}
 
 before_genes <- nrow(merged_expr) + sum(!complete.cases(merged_expr))
@@ -672,18 +673,35 @@ for (gene_set_name in names(top_gene_sets)) {
     acc <- cm$overall["Accuracy"]
     kappa <- cm$overall["Kappa"]
     macro_f1 <- mean(cm$byClass[, "F1"], na.rm = TRUE)
+    macro_precision <- mean(cm$byClass[, "Precision"], na.rm = TRUE)
+    macro_recall <- mean(cm$byClass[, "Recall"], na.rm = TRUE)
+    bal_acc <- mean(cm$byClass[, "Balanced Accuracy"], na.rm = TRUE)
+    macro_sens <- mean(cm$byClass[, "Sensitivity"], na.rm = TRUE)
+    macro_spec <- mean(cm$byClass[, "Specificity"], na.rm = TRUE)
     
     summary_list[[length(summary_list) + 1]] <- data.frame(
       GeneSet = gene_set_name,
       Model = model_name,
       Accuracy = round(acc, 4),
       MacroF1 = round(macro_f1, 4),
+      MacroPrecision = round(macro_precision, 4),
+      MacroRecall = round(macro_recall, 4),
+      BalancedAccuracy = round(bal_acc, 4),
+      MacroSensitivity = round(macro_sens, 4),
+      MacroSpecificity = round(macro_spec, 4),
       Kappa = round(kappa, 4)
     )
     
     cat("\n======", gene_set_name, "-", model_name, "======\n")
     print(cm$table)
-    cat("Test Accuracy:", round(acc, 3), "| Kappa:", round(kappa, 3), "| Macro F1:", round(macro_f1, 3), "\n")
+    cat("Test Accuracy:", round(acc, 3), 
+        "| Kappa:", round(kappa, 3), 
+        "| Macro F1:", round(macro_f1, 3), 
+        "| Precision:", round(macro_precision, 3), 
+        "| Recall:", round(macro_recall, 3),
+        "| Sensitivity:", round(macro_sens, 3),
+        "| Specificity:", round(macro_spec, 3),
+        "| Balanced Accuracy:", round(bal_acc, 3), "\n")
   }
 }
 
@@ -706,19 +724,21 @@ ggplot(acc_df, aes(x = GeneSet, y = Accuracy, fill = Model)) +
   theme(legend.position = "top")
 
 # -------- Plot the Test evaluation metric bar chart --------
-eval_long <- pivot_longer(summary_df, cols = c("Accuracy", "MacroF1", "Kappa"),
+eval_long <- pivot_longer(summary_df, 
+                          cols = c("Accuracy", "MacroF1", "MacroPrecision", "MacroRecall", "MacroSensitivity", "MacroSpecificity", "BalancedAccuracy", "Kappa"),
                           names_to = "Metric", values_to = "Value")
 
 ggplot(eval_long, aes(x = GeneSet, y = Value, fill = Model)) +
   geom_col(position = position_dodge(0.8)) +
   facet_wrap(~ Metric, scales = "free_y") +
   labs(
-    title = "Test Set Evaluation: Accuracy, Macro F1, Kappa",
+    title = "Test Set Evaluation: Extended Metrics",
     x = "Top Gene Set",
     y = "Metric"
   ) +
   theme_minimal(base_size = 13) +
   theme(legend.position = "top")
+
 
 ```
 
