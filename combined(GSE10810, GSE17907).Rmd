@@ -18,6 +18,10 @@ library(e1071)  # for SVM
 library(randomForest)
 library(edgeR)
 library(sva)
+library(ggplot2)
+library(ggfortify)
+library(RColorBrewer)
+library(patchwork)
 ```
 
 ```{r include=FALSE}
@@ -362,8 +366,7 @@ p2 <- ggplot(df_plot, aes(x = sd, fill = status)) +
   theme_minimal()
 
 # Display the plots
-print(p1)
-print(p2)
+p1 + p2
 ```
 
 
