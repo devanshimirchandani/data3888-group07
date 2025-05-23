@@ -13,51 +13,55 @@ library(reshape2)
 # combined(GSE10810, GSE17907) findings summary
 
 ```{r}
-gse15852_metrics <- data.frame(
+library(dplyr)
+library(reshape2)
+library(ggplot2)
+
+combine_metrics <- data.frame(
   Genes = rep(c(30, 50, 80, 110), each = 3),
   Model = rep(c("SVM", "KNN", "RF"), times = 4),
-  Accuracy = c(0.579, 0.579, 0.474,
-               0.474, 0.526, 0.579,
-               0.579, 0.579, 0.526,
-               0.684, 0.579, 0.526),
-  Kappa = c(0.321, 0.318, 0.055,
-            0.021, 0.136, 0.306,
-            0.290, 0.248, 0.153,
-            0.477, 0.312, 0.153),
-  Macro_F1 = c(0.593, 0.681, 0.474,
-               0.667, 0.489, 0.697,
-               0.723, 0.610, 0.485,
-               0.731, 0.631, 0.570),
-  Precision = c(0.583, 0.317, 0.490,
-                0.250, 0.515, 0.341,
-                0.524, 0.615, 0.448,
-                0.788, 0.571, 0.583),
-  Recall = c(0.461, 0.372, 0.272,
-             0.250, 0.300, 0.372,
-             0.372, 0.350, 0.300,
-             0.539, 0.447, 0.322),
-  Sensitivity = c(0.461, 0.372, 0.272,
-                  0.250, 0.300, 0.372,
-                  0.372, 0.350, 0.300,
-                  0.539, 0.447, 0.322),
-  Specificity = c(0.824, 0.834, 0.760,
-                  0.757, 0.782, 0.827,
-                  0.819, 0.807, 0.789,
-                  0.857, 0.826, 0.782),
-  Balanced_Accuracy = c(0.642, 0.603, 0.516,
-                        0.504, 0.541, 0.600,
-                        0.595, 0.579, 0.545,
-                        0.698, 0.637, 0.552)
+  Accuracy = c(0.667, 0.571, 0.714,
+               0.667, 0.571, 0.667,
+               0.571, 0.571, 0.714,
+               0.714, 0.571, 0.714),
+  Kappa = c(0.46, 0.426, 0.568,
+            0.46, 0.408, 0.495,
+            0.295, 0.392, 0.55,
+            0.556, 0.408, 0.538),
+  Macro_F1 = c(0.809, 0.667, 0.69,
+               0.809, 0.633, 0.629,
+               0.684, 0.624, 0.648,
+               0.678, 0.633, 0.848),
+  Precision = c(0.524, 0.567, 0.55,
+                0.524, 0.643, 0.469,
+                0.5, 0.625, 0.659,
+                0.534, 0.643, 0.514),
+  Recall = c(0.437, 0.458, 0.507,
+             0.437, 0.424, 0.479,
+             0.365, 0.424, 0.507,
+             0.507, 0.424, 0.472),
+  Sensitivity = c(0.437, 0.458, 0.507,
+                  0.437, 0.424, 0.479,
+                  0.365, 0.424, 0.507,
+                  0.507, 0.424, 0.472),
+  Specificity = c(0.863, 0.869, 0.898,
+                  0.863, 0.863, 0.878,
+                  0.821, 0.854, 0.887,
+                  0.889, 0.863, 0.884),
+  Balanced_Accuracy = c(0.65, 0.663, 0.702,
+                        0.65, 0.643, 0.678,
+                        0.593, 0.639, 0.697,
+                        0.698, 0.643, 0.678)
 )
 
 # View the table
-print(gse15852_metrics)
+print(combine_metrics)
 
 # Add an identifier for easier plotting
-gse15852_metrics$Config <- paste(gse15852_metrics$Model, gse15852_metrics$Genes, sep = "_")
+combine_metrics$Config <- paste(combine_metrics$Model, combine_metrics$Genes, sep = "_")
 
-# Select top 5 models by Accuracy (you can change this to Macro_F1 or Balanced_Accuracy)
-top5 <- gse15852_metrics %>%
+# Select top 5 models by Balanced Accuracy
+top5 <- combine_metrics %>%
   arrange(desc(Balanced_Accuracy)) %>%
   head(5)
 
@@ -73,89 +77,116 @@ ggplot(top5_long, aes(x = variable, y = Config, fill = value)) +
        y = "Model (Config)") +
   theme_minimal(base_size = 14) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
 ```
 
-# Best Model - SVM110
+# Best Model – RF110 (Random Forest with Top 110 Genes) 
 
--   Highest Accuracy (0.684)
-    -   Indicates SVM110 made the most correct predictions out of all tested combinations.
-    -   While accuracy can be misleading with imbalanced data, you mentioned your datasets are relatively balanced, making this metric reliable.
--   Highest Kappa Score (0.477)
-    -   Kappa measures the agreement between predicted and actual classes, adjusted for chance.
-    -   A Kappa \> 0.4 is moderate to substantial agreement—SVM110 is statistically outperforming random chance more than any other model.
--   Highest Macro F1 Score (0.731)
-    -   Macro F1 gives equal weight to each class.
-    -   Indicates that SVM110 maintains strong predictive balance across all grades (Grade1, Grade2, Grade3, Normal).
-    -   No single class is dominating the model’s behavior, which often happens in medical classification problems.
--   Very High Precision (0.788)
-    -   The model is rarely wrong when it predicts a certain class.
-    -   Important in clinical settings, where false positives (e.g., wrongly diagnosing cancer grade) have serious implications.
--   Improved Recall (0.539)
-    -   While not the highest possible, it's much better than random guessing or many other models.
-    -   Recall complements precision: this indicates the model is fairly good at detecting actual positive cases, especially hard-to-detect classes.
--   Strong Specificity (0.857)
-    -   SVM110 correctly identifies negatives (e.g., correctly recognizing normal tissue or distinguishing between grades).
-    -   High specificity minimizes false positives — critical for avoiding overtreatment or unnecessary biopsies.
--   Highest Balanced Accuracy (0.698)
-    -   Averages sensitivity (recall) and specificity.
-    -   This is the most appropriate metric when class distribution is uneven or when both false positives and false negatives matter — which is true in your medical grading context.
+**Best Macro F1 Score (0.848)**
 
-SVM with top 110 genes is the best model because:
+-   This means RF110 does well across all classes (Normal, Grade1, Grade2, Grade3), not just one.
 
--   It performs consistently across all metrics, especially balanced metrics like Kappa, Macro F1, and Balanced Accuracy.
+-   It’s balanced — each class is treated fairly.
 
--   It handles the complex, high-dimensional gene data better than others.
+**High Accuracy (0.714)**
 
--   It balances the tradeoff between precision and recall, and is particularly strong in avoiding false positives while still capturing enough true positives.
+-   RF110 made the most correct predictions overall (tied with other top models).
+
+-   Since your data is balanced, accuracy is a reliable measure.
+
+**Strong Balanced Accuracy (0.678)**
+
+-   Balanced Accuracy averages how well the model detects true positives and avoids false positives.
+
+-   RF110 is consistent and fair in both areas — important in medical decisions.
+
+**High Kappa Score (0.538)**
+
+-   This means RF110’s predictions agree with the actual labels much better than random guessing.
+
+**Good Precision (0.514)**
+
+-   When RF110 predicts a class, it’s often correct.
+
+-   Helps reduce false positives (like wrongly diagnosing a severe grade).
+
+**Good Recall (0.472)**
+
+-   RF110 can catch actual positive cases — important so serious grades aren’t missed.
+
+**High Specificity (0.884)**
+
+-   It’s very good at correctly identifying negatives (e.g., normal tissue).
+
+-   Helps avoid unnecessary treatments or procedures.
+
+**Why RF110 is the Best Overall:**
+
+-   Best overall balance across all metrics.
+
+<!-- -->
+
+-   It’s strong at both detecting real cases and avoiding false alarms.
+
+-   Performs especially well in a medical setting where both precision and recall are critical.
 
 # GSE17907 findings summary
 
 ```{r}
-# Create data frame for GSE19707 evaluation metrics
-gse19707_metrics <- data.frame(
-  Genes = rep(c("top30", "top50", "top80", "top110"), each = 3),
+library(ggplot2)
+library(reshape2)
+library(dplyr)
+
+# Evaluation metrics for GSE17907 dataset
+gse17907_metrics <- data.frame(
+  Genes = rep(c(30, 50, 80, 110), each = 3),
   Model = rep(c("SVM", "KNN", "RF"), times = 4),
-  Accuracy = c(0.579, 0.579, 0.474,
-               0.474, 0.526, 0.579,
-               0.579, 0.579, 0.526,
-               0.684, 0.579, 0.526),
-  Kappa = c(0.321, 0.318, 0.055,
-            0.021, 0.136, 0.306,
-            0.290, 0.248, 0.153,
-            0.477, 0.312, 0.153),
-  Macro_F1 = c(0.593, 0.681, 0.474,
-               0.667, 0.489, 0.697,
-               0.723, 0.610, 0.485,
-               0.731, 0.631, 0.570),
-  Precision = c(0.583, 0.317, 0.490,
-                0.250, 0.515, 0.341,
-                0.524, 0.615, 0.448,
-                0.788, 0.571, 0.583),
-  Recall = c(0.461, 0.372, 0.272,
-             0.250, 0.300, 0.372,
-             0.372, 0.350, 0.300,
-             0.539, 0.447, 0.322),
-  Specificity = c(0.824, 0.834, 0.760,
-                  0.757, 0.782, 0.827,
-                  0.819, 0.807, 0.789,
-                  0.857, 0.826, 0.782),
-  Balanced_Accuracy = c(0.642, 0.603, 0.516,
-                        0.504, 0.541, 0.600,
-                        0.595, 0.579, 0.545,
-                        0.698, 0.637, 0.552)
+  Accuracy = c(0.5, 0.667, 0.583,
+               0.583, 0.667, 0.583,
+               0.667, 0.667, 0.583,
+               0.583, 0.583, 0.583),
+  Kappa = c(-0.029, 0.36, 0.143,
+            0, 0.36, 0.143,
+            0.262, 0.36, 0.143,
+            0, 0.143, 0.143),
+  Macro_F1 = c(0.706, 0.639, 0.686,
+               0.737, 0.639, 0.686,
+               0.722, 0.639, 0.686,
+               0.737, 0.686, 0.686),
+  Precision = c(0.3, 0.722, 0.533,
+                0.583, 0.722, 0.533,
+                0.818, 0.722, 0.533,
+                0.583, 0.533, 0.533),
+  Recall = c(0.214, 0.464, 0.339,
+             0.25, 0.464, 0.339,
+             0.375, 0.464, 0.339,
+             0.25, 0.339, 0.339),
+  Sensitivity = c(0.214, 0.464, 0.339,
+                  0.25, 0.464, 0.339,
+                  0.375, 0.464, 0.339,
+                  0.25, 0.339, 0.339),
+  Specificity = c(0.75, 0.825, 0.775,
+                  0.75, 0.825, 0.775,
+                  0.8, 0.825, 0.775,
+                  0.75, 0.775, 0.775),
+  Balanced_Accuracy = c(0.482, 0.645, 0.557,
+                        0.5, 0.645, 0.557,
+                        0.588, 0.645, 0.557,
+                        0.5, 0.557, 0.557)
 )
 
-# View the table
-print(gse19707_metrics)
+# Add unique Config column
+gse17907_metrics$Config <- paste(gse17907_metrics$Model, gse17907_metrics$Genes, sep = "_")
 
-gse19707_metrics$Config <- paste(gse19707_metrics$Model, gse19707_metrics$Genes, sep = "_")
+# Remove duplicated rows just in case (optional but safe)
+gse17907_metrics <- distinct(gse17907_metrics)
 
-# Select top 5 models by Accuracy (you can change this to Macro_F1 or Balanced_Accuracy)
-top5 <- gse19707_metrics %>%
+# Select top 5 *distinct* models by Balanced Accuracy
+top5 <- gse17907_metrics %>%
   arrange(desc(Balanced_Accuracy)) %>%
-  head(5)
+  slice_head(n = 5)
 
-# Reshape to long format for ggplot
+# Reshape to long format for heatmap
 top5_long <- melt(top5, id.vars = c("Model", "Genes", "Config"))
 
 # Plot heatmap
@@ -167,78 +198,75 @@ ggplot(top5_long, aes(x = variable, y = Config, fill = value)) +
        y = "Model (Config)") +
   theme_minimal(base_size = 14) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
 ```
 
-# Best Model – SVM110 
+# Best Model – KNN (Top30/50/80 genes) 
 
-Highest Accuracy (0.737)
+**Strong Accuracy (0.667)**
 
--   SVM110 achieved the highest accuracy in this dataset.
-
--   It means nearly 74% of samples were classified correctly — strong overall performance across 4-grade classification.
-
--   Since GSE17907 is relatively balanced, accuracy remains a trustworthy summary metric.
-
-Highest Kappa Score (0.627)
-
--   Kappa corrects for chance-level performance.
+-   Makes about 2 out of 3 predictions correctly.
 
 <!-- -->
 
--   A score of 0.627 indicates substantial agreement with true labels, outperforming all other classifiers by a significant margin.
+-   Matches the top performers in this dataset.
 
--   Shows this model isn't “lucky” — it’s genuinely learning the pattern in gene expression.
+**Highest Kappa (0.360)**
 
-Highest Macro F1 Score (0.756)
+-   KNN predictions agree with true labels much more than random chance.
 
--   The F1 score balances precision and recall per class and then averages across all.
+**Good Macro F1 Score (0.639)**
 
--   A macro F1 of 0.756 shows excellent balance: the model isn’t biased toward any one grade (e.g., not just doing well on Grade 3 at the expense of Grade 1 or Normal).
-
--   This is particularly important in clinical data, where each class could correspond to very different treatment paths.
-
-Very High Precision (0.815)
-
--   SVM110 is very confident and correct in its predictions.
-
--   Minimizes false positives, which is crucial to prevent over-treatment — for example, not mislabeling Grade 1 or Normal tissue as Grade 3.
-
-Improved Recall (0.605)
-
--   Recall is how well the model finds actual positive cases.
-
--   60.5% recall is solid for multi-class biological data and implies the model picks up on most true signals of grade shifts.
-
--   Complements the high precision to show a balanced classifier, not just a conservative one.
-
-Strong Specificity (0.869)
-
--   High specificity means the model correctly identifies negatives (e.g., normal tissue or lower grades).
-
--   This ensures fewer unnecessary alarms, a major consideration in pathology.
-
-Highest Balanced Accuracy (0.737)
-
--   Averaging sensitivity and specificity, this score reflects overall model robustness in both detecting disease and avoiding false alarms.
-
--   A great choice when class imbalances or misclassification risks are not equal — which they often aren't in grading histology samples.
-
-Summary:
-
--   SVM with 110 genes is the best choice because:
+-   Indicates balanced performance across all grades.
 
 <!-- -->
 
--   It’s the most consistently high across every performance metric.
+-   No single class is dominating the results — important for fairness in medical data.
 
--   The model is statistically sound (Kappa), balanced (Macro F1 and Balanced Accuracy), and clinically safe (high Precision and Specificity).
+**High Precision (0.722)**
 
--   It effectively handles gene expression complexity and inter-grade distinctions in GSE17907.
+-   When KNN predicts a specific grade, it's usually right.
 
-# GSE17907 findings summary
+<!-- -->
+
+-   Helps avoid false positives, like overdiagnosing a cancer grade.
+
+**Reasonable Recall (0.464)**
+
+-   KNN finds about 46% of all actual positive cases.
+
+<!-- -->
+
+-   It may miss some positives, but it outperforms other models here.
+
+**Highest Specificity (0.825)**
+
+-   Great at identifying true negatives — important to avoid unnecessary treatment.
+
+**Best Balanced Accuracy (0.645)**
+
+-   Combines recall and specificity — a balanced view.
+
+-   Shows the model is not biased toward only positive or negative predictions.
+
+**Why KNN is Best for GSE17907**
+
+-   It outperforms SVM and RF on every metric except F1 (which SVM slightly improves).
+
+<!-- -->
+
+-   Delivers consistent results across multiple top gene sets.
+
+-   Especially strong in precision, specificity, and overall balanced performance — key for medical diagnostics.
+
+# GSE1582 findings summary
 
 ```{r}
-# Evaluation metrics for GSE17907 dataset
+library(ggplot2)
+library(reshape2)
+library(dplyr)
+
+# Evaluation metrics from confusion matrices
 gse17907_metrics <- data.frame(
   Genes = rep(c(30, 50, 80, 110), each = 3),
   Model = rep(c("SVM", "KNN", "RF"), times = 4),
@@ -276,16 +304,15 @@ gse17907_metrics <- data.frame(
                         0.698, 0.637, 0.552)
 )
 
-print(combined_metrics)
+# Add Config column
+gse17907_metrics$Config <- paste(gse17907_metrics$Model, gse17907_metrics$Genes, sep = "_")
 
-combined_metrics$Config <- paste(combined_metrics$Model, combined_metrics$Genes, sep = "_")
-
-# Select top 5 models by Accuracy (you can change this to Macro_F1 or Balanced_Accuracy)
-top5 <- combined_metrics %>%
+# Select top 5 models by Balanced Accuracy
+top5 <- gse17907_metrics %>%
   arrange(desc(Balanced_Accuracy)) %>%
   head(5)
 
-# Reshape to long format for ggplot
+# Reshape to long format for heatmap
 top5_long <- melt(top5, id.vars = c("Model", "Genes", "Config"))
 
 # Plot heatmap
@@ -298,64 +325,43 @@ ggplot(top5_long, aes(x = variable, y = Config, fill = value)) +
   theme_minimal(base_size = 14) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
+
 ```
 
-# Best Model – SVM110 
+# Best Model – SVM (Top110 genes)
 
-Highest Accuracy (0.789)
+**Strong Accuracy (0.684)**
 
--   Nearly 79% classification accuracy, which is very high for 4-class prediction from transcriptomic data.
+-   Correctly classifies about 68% of samples, outperforming others in this dataset.
 
--   Suggests SVM110 extracts meaningful patterns from expression values even under inter-grade variation.
+**Highest Kappa (0.477)**
 
-Highest Kappa Score (0.676)
+-   Shows substantial agreement between predictions and true labels beyond random chance, indicating reliable classification.
 
--   A Kappa \> 0.6 = substantial agreement — indicating the model learns meaningful distinctions between the classes beyond random alignment.
+**Good Macro F1 Score (0.731)**
 
--   Best in this dataset, showing this SVM configuration is statistically reliable.
+-   Balances precision and recall well across all grades, suggesting consistent performance on each class.
 
-Highest Macro F1 Score (0.803)
+**High Precision (0.788)**
 
--   Excellent class-wise balance: the model performs well across all tissue grades.
+-   When SVM predicts a specific grade, it is usually correct, reducing the risk of false positives, which is crucial in medical diagnosis.
 
--   Prevents overfitting to dominant classes and helps ensure fair treatment across pathology labels.
+**Reasonable Recall (0.539)**
 
-Extremely High Precision (0.841)
+-   Finds about 54% of all actual positive cases, a good balance that helps detect many true positives while avoiding excessive false alarms.
 
--   Precision nearing 85% is extremely valuable.
+**Highest Specificity (0.857)**
 
--   Doctors could trust predictions from this model, with low rates of false positives.
+-   Excellent at correctly identifying true negatives, helping to prevent unnecessary treatments or interventions.
 
--   It would rarely misclassify healthy or less severe grades as more aggressive ones — avoiding unnecessary intervention.
+**Best Balanced Accuracy (0.698)**
 
-Best Recall (0.627)
+-   Combines recall and specificity effectively, showing the model is well-balanced and unbiased toward any class.
 
--   Detects over 62% of all true cases.
+**Why SVM is Best for GSE15852**
 
--   While slightly lower than Precision, this is a good tradeoff: enough cases are caught while maintaining high confidence in predictions.
+-   Outperforms KNN and RF on most metrics, especially precision, specificity, and overall balanced accuracy.
 
--   Again, a good sign that this model doesn’t sacrifice recall for precision.
+-   Consistently strong across the largest gene set tested, indicating stability and robustness.
 
-Strongest Specificity (0.895)
-
--   Excellent at rejecting negative samples.
-
--   In a multi-class, clinical dataset like GSE15852, this keeps the false alarm rate low.
-
--   Especially valuable when false positives result in stress, cost, or risky follow-ups.
-
-Highest Balanced Accuracy (0.761)
-
--   The best single metric to summarize overall fairness in detection.
-
--   Shows that the model is not only accurate, but also balanced — not overconfident in majority classes or blind to subtle grade changes.
-
-Summary:
-
--   SVM with 110 genes is the best choice because:
-
--   It achieves the best tradeoff between sensitivity and specificity, and between precision and recall.
-
--   Kappa and Macro F1 show strong statistical validity and class fairness.
-
--   This model demonstrates clinical reliability and gene-level generalizability across grading tasks.
+-   Its balance between sensitivity and specificity is ideal for medical diagnostics where both false negatives and false positives carry serious consequences.

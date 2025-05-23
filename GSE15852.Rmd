@@ -1,5 +1,5 @@
 ---
-title: "malay"
+title: "COMBINED V2"
 output: html_document
 date: "2025-05-06"
 ---
@@ -22,7 +22,7 @@ library(sva)
 
 ```{r include=FALSE}
 gse <- getGEO("GSE15852")
-gse10810 <- gse[[1]]
+gse15852 <- gse[[1]]
 ```
 
 ```{r}
@@ -75,28 +75,6 @@ cat("Datasets containing all four grades:", paste(qualified_datasets, collapse =
 ```
 
 
-```{r}
-# Helper function to process ExpressionSet
-process_eset <- function(eset, min_avg_expr = 5) {
-  exprs_mat <- exprs(eset)
-  
-  # Filter lowly expressed genes
-  keep_exprs <- rowMeans(exprs_mat) >= min_avg_expr
-  exprs_mat <- exprs_mat[keep_exprs, , drop = FALSE]
-  
-  # Remove duplicate genes (based on rownames)
-  unique_rows <- !duplicated(rownames(exprs_mat))
-  exprs_mat <- exprs_mat[unique_rows, , drop = FALSE]
-
-  # Subset the ExpressionSet to match filtered expression matrix
-  eset_filtered <- eset[rownames(exprs_mat), ]
-  return(eset_filtered)
-}
-
-# Apply to each dataset and keep same names
-gse17907 <- process_eset(gse15852)
-
-```
 
 ```{r}
 
@@ -174,6 +152,52 @@ metadata
 ```
 
 ```{r}
+filter_low_expression <- function(expr_data, median_threshold = 5, sd_threshold = 0.5, filter_median = TRUE, filter_sd = TRUE) {
+  # expr_data: expression matrix (genes x samples) or ExpressionSet object
+  # median_threshold: genes with median expression below this will be filtered out
+  # sd_threshold: genes with SD below this will be filtered out
+  # filter_median: whether to filter by median expression
+  # filter_sd: whether to filter by standard deviation (variance)
+  
+  # If input is ExpressionSet, extract expression matrix
+  if (class(expr_data)[1] == "ExpressionSet") {
+    exprs_mat <- exprs(expr_data)
+  } else if (is.matrix(expr_data) || is.data.frame(expr_data)) {
+    exprs_mat <- as.matrix(expr_data)
+  } else {
+    stop("expr_data must be an ExpressionSet or a matrix/data.frame")
+  }
+  
+  keep_median <- rep(TRUE, nrow(exprs_mat))
+  keep_sd <- rep(TRUE, nrow(exprs_mat))
+  
+  if (filter_median) {
+    keep_median <- apply(exprs_mat, 1, median) > median_threshold
+  }
+  if (filter_sd) {
+    keep_sd <- apply(exprs_mat, 1, sd) > sd_threshold
+  }
+  
+  keep <- keep_median & keep_sd
+  
+  # Filter the expression matrix or ExpressionSet accordingly
+  if (class(expr_data)[1] == "ExpressionSet") {
+    filtered <- expr_data[keep, ]
+  } else {
+    filtered <- exprs_mat[keep, , drop = FALSE]
+  }
+  
+  return(filtered)
+}
+
+```
+
+```{r}
+merged_expr <- filter_low_expression(merged_expr, median_threshold = 5, sd_threshold = 0.5)
+dim(merged_expr)
+```
+
+```{r}
 
 
 metadata <- metadata[!is.na(metadata$grade), ]
@@ -188,50 +212,7 @@ merged_expr
 table(metadata$grade)
 ```
 
-```{r}
-library(edgeR)
-library(ggplot2)
-library(reshape2)
-library(magrittr)
-library(cowplot)
-library(dplyr)
 
-dge <- DGEList(counts = merged_expr)
-## A common guideline is to filter so that we retain genes expressed at least 1 cpm in the smallest group of samples
-min_group_size <- min(table(metadata$grade))
-keepTheseGenes <- rowSums(cpm(dge) > 1) >= min_group_size
-
-
-beforeFiltering_plot <- dge %>% 
-  cpm(log = TRUE) %>% 
-  melt %>% 
-  dplyr::filter(is.finite(value)) %>% 
-  ggplot(aes(x = value, colour = Var2)) +
-  geom_density() + 
-  guides(colour = FALSE) +
-  ggtitle("A. Before filtering", subtitle = paste0(nrow(dge), " genes")) +
-  labs(x = "logCPM", y = "Density")
-
-afterFiltering_plot <- dge %>% 
-  cpm(log = TRUE) %>% 
-  magrittr::extract(keepTheseGenes, ) %>%
-  melt %>% 
-  dplyr::filter(is.finite(value)) %>% 
-  ggplot(aes(x = value, colour = Var2)) +
-  geom_density() + 
-  guides(colour = FALSE) +
-  ggtitle("B. After filtering", subtitle = paste0(sum(keepTheseGenes), " genes")) +
-  labs(x = "logCPM", y = "Density")
-
-cowplot::plot_grid(beforeFiltering_plot, afterFiltering_plot)
-
-merged_expr_filtered <- merged_expr[keepTheseGenes, ]
-
-metadata <- metadata[metadata$sample %in% colnames(merged_expr_filtered), ]
-merged_expr_filtered <- merged_expr_filtered[, metadata$sample]
-stopifnot(all(colnames(merged_expr_filtered) == metadata$sample))
-
-```
 
 ## split train and test
 ```{r}
@@ -250,8 +231,8 @@ train_samples <- unlist(lapply(split_by_grade, function(df) {
 test_samples <- setdiff(metadata$sample, train_samples)
 
 # ========== 6. Extract the expression matrix and metadata ==========
-expr_train <- merged_expr_filtered[, train_samples]
-expr_test  <- merged_expr_filtered[, test_samples]
+expr_train <- merged_expr[, train_samples]
+expr_test  <- merged_expr[, test_samples]
 
 metadata_train <- metadata[match(train_samples, metadata$sample), ]
 metadata_test  <- metadata[match(test_samples, metadata$sample), ]
