@@ -326,6 +326,47 @@ filter_low_expression <- function(expr_data, median_threshold = 5, sd_threshold 
 
 ```
 
+# module 2
+
+```{r}
+# Assume merged_expr is your original expression matrix (genes x samples)
+
+# Compute statistics before filtering
+gene_medians_before <- apply(merged_expr, 1, median)
+gene_sds_before <- apply(merged_expr, 1, sd)
+
+# Apply filter
+filtered_expr <- filter_low_expression(merged_expr, median_threshold = 5, sd_threshold = 0.5)
+
+# Compute statistics after filtering
+gene_medians_after <- apply(filtered_expr, 1, median)
+gene_sds_after <- apply(filtered_expr, 1, sd)
+
+# Create data frame for ggplot
+df_plot <- data.frame(
+  median = c(gene_medians_before, gene_medians_after),
+  sd = c(gene_sds_before, gene_sds_after),
+  status = rep(c("Before Filtering", "After Filtering"),
+               c(length(gene_medians_before), length(gene_medians_after)))
+)
+
+# Density plots
+p1 <- ggplot(df_plot, aes(x = median, fill = status)) +
+  geom_density(alpha = 0.5) +
+  labs(title = "Gene Median Expression", x = "Median Expression", y = "Density") +
+  theme_minimal()
+
+p2 <- ggplot(df_plot, aes(x = sd, fill = status)) +
+  geom_density(alpha = 0.5) +
+  labs(title = "Gene Expression SD", x = "Standard Deviation", y = "Density") +
+  theme_minimal()
+
+# Display the plots
+print(p1)
+print(p2)
+```
+
+
 ```{r}
 merged_expr <- filter_low_expression(merged_expr, median_threshold = 5, sd_threshold = 0.5)
 dim(merged_expr)
@@ -399,7 +440,7 @@ remove_zero_var_genes <- function(expr, batch) {
   expr[keep, ]
 }
 
-expr_clean <- remove_zero_var_genes(merged_expr_filtered, batch_all)
+expr_clean <- remove_zero_var_genes(merged_expr, batch_all)
 
 # ========== 4. Batch effect correction ==========
 expr_corrected <- ComBat(dat = expr_clean, batch = batch_all, mod = mod_all)

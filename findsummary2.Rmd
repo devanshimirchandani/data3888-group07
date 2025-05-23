@@ -20,39 +20,40 @@ library(ggplot2)
 combine_metrics <- data.frame(
   Genes = rep(c(30, 50, 80, 110), each = 3),
   Model = rep(c("SVM", "KNN", "RF"), times = 4),
-  Accuracy = c(0.667, 0.571, 0.714,
+  Accuracy = c(0.714, 0.619, 0.714,
                0.667, 0.571, 0.667,
-               0.571, 0.571, 0.714,
-               0.714, 0.571, 0.714),
-  Kappa = c(0.46, 0.426, 0.568,
-            0.46, 0.408, 0.495,
-            0.295, 0.392, 0.55,
-            0.556, 0.408, 0.538),
-  Macro_F1 = c(0.809, 0.667, 0.69,
-               0.809, 0.633, 0.629,
-               0.684, 0.624, 0.648,
-               0.678, 0.633, 0.848),
-  Precision = c(0.524, 0.567, 0.55,
-                0.524, 0.643, 0.469,
-                0.5, 0.625, 0.659,
-                0.534, 0.643, 0.514),
-  Recall = c(0.437, 0.458, 0.507,
-             0.437, 0.424, 0.479,
-             0.365, 0.424, 0.507,
-             0.507, 0.424, 0.472),
-  Sensitivity = c(0.437, 0.458, 0.507,
-                  0.437, 0.424, 0.479,
-                  0.365, 0.424, 0.507,
-                  0.507, 0.424, 0.472),
-  Specificity = c(0.863, 0.869, 0.898,
-                  0.863, 0.863, 0.878,
-                  0.821, 0.854, 0.887,
-                  0.889, 0.863, 0.884),
-  Balanced_Accuracy = c(0.65, 0.663, 0.702,
-                        0.65, 0.643, 0.678,
-                        0.593, 0.639, 0.697,
-                        0.698, 0.643, 0.678)
+               0.524, 0.619, 0.762,
+               0.667, 0.619, 0.762),
+  Kappa = c(0.556, 0.455, 0.538,
+            0.46, 0.376, 0.507,
+            0.231, 0.477, 0.62,
+            0.46, 0.481, 0.639),
+  Macro_F1 = c(0.678, 0.641, 0.848,
+               0.809, 0.778, 0.667,
+               0.655, 0.702, 0.698,
+               0.809, 0.733, 0.761),
+  Precision = c(0.534, 0.531, 0.514,
+                0.524, 0.389, 0.498,
+                0.367, 0.583, 0.722,
+                0.524, 0.667, 0.58),
+  Recall = c(0.507, 0.451, 0.472,
+             0.437, 0.389, 0.514,
+             0.337, 0.486, 0.535,
+             0.437, 0.486, 0.569),
+  Sensitivity = c(0.507, 0.451, 0.472,
+                  0.437, 0.389, 0.514,
+                  0.337, 0.486, 0.535,
+                  0.437, 0.486, 0.569),
+  Specificity = c(0.889, 0.873, 0.884,
+                  0.863, 0.852, 0.881,
+                  0.806, 0.881, 0.902,
+                  0.863, 0.883, 0.913),
+  Balanced_Accuracy = c(0.698, 0.662, 0.678,
+                        0.65, 0.62, 0.697,
+                        0.572, 0.684, 0.718,
+                        0.65, 0.685, 0.741)
 )
+
 
 # View the table
 print(combine_metrics)
@@ -80,51 +81,59 @@ ggplot(top5_long, aes(x = variable, y = Config, fill = value)) +
 
 ```
 
-# Best Model – RF110 (Random Forest with Top 110 Genes)
+# Best Model – RF110 
 
 **Best Macro F1 Score (0.848)**
 
--   This means RF110 does well across all classes (Normal, Grade1, Grade2, Grade3), not just one.
+-   RF110 handles all classes well — Normal, Grade1, Grade2, and Grade3.
 
--   It’s balanced — each class is treated fairly.
+-   Macro F1 treats all classes equally, so this score shows RF110 doesn’t just perform well on one class — it's balanced across the board.
 
 **High Accuracy (0.714)**
 
--   RF110 made the most correct predictions overall (tied with other top models).
+-   RF110 correctly predicted the class in over 71% of test cases.
 
--   Since your data is balanced, accuracy is a reliable measure.
+-   Since the dataset is balanced, accuracy is a reliable indicator — and RF110 is one of the most accurate models overall.
 
 **Strong Balanced Accuracy (0.678)**
 
--   Balanced Accuracy averages how well the model detects true positives and avoids false positives.
+-   Balanced Accuracy averages sensitivity (true positive rate) and specificity (true negative rate).
 
--   RF110 is consistent and fair in both areas — important in medical decisions.
+-   RF110 is reliable at detecting real positives and good at avoiding false alarms — important for medical decision-making.
 
 **High Kappa Score (0.538)**
 
--   This means RF110’s predictions agree with the actual labels much better than random guessing.
+-   Kappa compares the model's predictions to what would be expected by random chance.
+
+-   A score of 0.538 shows that RF110 has strong agreement with the actual labels and performs well above random guessing.
 
 **Good Precision (0.514)**
 
--   When RF110 predicts a class, it’s often correct.
+-   When RF110 predicts a specific class (e.g., Grade3), it is often correct.
 
--   Helps reduce false positives (like wrongly diagnosing a severe grade).
+-   This helps minimize false positives, which is critical for avoiding unnecessary treatments.
 
 **Good Recall (0.472)**
 
--   RF110 can catch actual positive cases — important so serious grades aren’t missed.
+-   RF110 successfully identifies many of the actual positive cases.
+
+-   Important in medical applications where missing a case (false negative) can have serious consequences.
 
 **High Specificity (0.884)**
 
--   It’s very good at correctly identifying negatives (e.g., normal tissue).
+-   RF110 is highly effective at identifying negatives correctly (e.g., normal tissue).
 
--   Helps avoid unnecessary treatments or procedures.
+-   This reduces the risk of overdiagnosis and unnecessary anxiety or procedures.
 
-**Why RF110 is the Best Overall:**
+**Why RF110 is the Best Overall**
 
--   Best overall balance across all metrics.
--   It’s strong at both detecting real cases and avoiding false alarms.
--   Performs especially well in a medical setting where both precision and recall are critical.
+-   Best overall balance across key metrics, especially Macro F1.
+
+-   High accuracy, precision, recall, and specificity make it strong across all performance areas.
+
+-   Performs well across all classes, not just one — making it especially suitable for multiclass medical classification.
+
+-   Its combination of accurate detection and low false alarm rate is ideal for sensitive and high-stakes domains like healthcare.
 
 # GSE17907 findings summary
 
