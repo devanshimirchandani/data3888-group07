@@ -1781,7 +1781,7 @@ server <- function(input, output, session) {
                                                                                       h2("Metric Context: Balanced Accuracy vs. Accuracy"),
                                                                                       p("While accuracy reflects the overall proportion of correct predictions, it can be deceptive in breast cancer detection due to class imbalance. For example, if 90% of cases are benign, a model could achieve 90% accuracy simply by predicting “benign” for every case—yet it would completely fail at detecting actual cancers. Therefore, accuracy must be interpreted cautiously and alongside other metrics like recall or F1 score.")
                                                                                   ),
-                                                                                  DTOutput("balanced_accuracy_table"),
+                                                                                  DTOutput("balanced_accuracy_table")
                                                                                   
                                                                                   
                                                                          ),
@@ -2419,57 +2419,85 @@ server <- function(input, output, session) {
   })
   
   
-  output$metric_table <- DT::renderDataTable({
+  output$metric_table <- renderDT({
+    req(input$dataset_choice, input$model_choice, input$topn_choice)
+    df_GSE15852 <- data.frame(
+      Genes = rep(c(30, 50, 80, 110), each = 3),
+      Model = rep(c("SVM", "KNN", "RF"), times = 4),
+      Kappa = c(0.321, 0.318, 0.055,
+                0.021, 0.136, 0.306,
+                0.290, 0.248, 0.153,
+                0.477, 0.312, 0.153),
+      batch = "GSE15852"
+    )
+    
+    df_GSE17907 <- data.frame(
+      Genes = rep(c(30, 50, 80, 110), each = 3),
+      Model = rep(c("SVM", "KNN", "RF"), times = 4),
+      Kappa = c(-0.029, 0.36, 0.143,
+                0, 0.36, 0.143,
+                0.262, 0.36, 0.143,
+                0, 0.143, 0.143),
+      batch = "GSE17907"
+    )
+    
+    df_Combined <- data.frame(
+      Genes = rep(c(30, 50, 80, 110), each = 3),
+      Model = rep(c("SVM", "KNN", "RF"), times = 4),
+      Kappa = c(0.556, 0.455, 0.538,
+                0.46, 0.376, 0.507,
+                0.231, 0.477, 0.62,
+                0.46, 0.481, 0.639),
+      batch = "Combined"
+    )
+    df_all <- bind_rows(df_GSE15852, df_GSE17907, df_Combined)
     ds      <- input$dataset_choice
     model   <- input$model_choice
     geneset <- paste0("top", input$topn_choice)
+    genes   <- as.numeric(sub("top", "", geneset))
+    df_sel <- df_all %>%
+      filter(batch == ds,
+             Model == model,
+             Genes == genes) %>%
+      select(Genes, Model, Kappa)
     
-    df <- all_results_df[[ds]][[geneset]][[model]]
-    req(df)
-    
-    cm    <- caret::confusionMatrix(
-      factor(df$`Predicted Grade`, levels = c("0","1","2","3")),
-      factor(df$`True Grade`,      levels = c("0","1","2","3"))
-    )
-    kappa <- round(cm$overall["Kappa"], 3)
-    
-    tbl <- data.frame(
-      Dataset = ds,
-      Model   = model,
-      Geneset = geneset,
-      Kappa   = kappa,
-      stringsAsFactors = FALSE
-    )
-    
-    DT::datatable(
-      tbl,
-      options = list(
-        paging    = FALSE,
-        searching = FALSE,
-        info      = FALSE,
-        ordering  = FALSE,
-        autoWidth = TRUE
-      ),
-      rownames = FALSE
-    )
+    datatable(df_sel, rownames = FALSE)
   })
+  
   output$balanced_accuracy_table <- renderDT({
     req(input$dataset_choice)
-    
     if (input$dataset_choice == "GSE15852") {
       df <- data.frame(
-        Genes  = rep(c(30, 50, 80, 110), each = 3),
-        Model  = rep(c("SVM", "KNN", "RF"), times = 4),
-        Balanced_Accuracy = c(
-          0.571, 0.561, 0.493,
-          0.482, 0.513, 0.563,
-          0.581, 0.568, 0.545,
-          0.631, 0.579, 0.551
-        )
+        Genes = rep(c(30, 50, 80, 110), each = 3),
+        Model = rep(c("SVM","KNN","RF"), times = 4),
+        Balanced_Accuracy = c(0.642,0.603,0.516,
+                              0.504,0.541,0.600,
+                              0.595,0.579,0.545,
+                              0.698,0.637,0.552)
       )
-      datatable(df)
+    } else if (input$dataset_choice == "GSE17907") {
+      df <- data.frame(
+        Genes = rep(c(30, 50, 80, 110), each = 3),
+        Model = rep(c("SVM","KNN","RF"), times = 4),
+        Balanced_Accuracy = c(0.482,0.645,0.557,
+                              0.500,0.645,0.557,
+                              0.588,0.645,0.557,
+                              0.500,0.557,0.557)
+      )
+    } else if (input$dataset_choice == "Combined") {
+      df <- data.frame(
+        Genes = rep(c(30, 50, 80, 110), each = 3),
+        Model = rep(c("SVM","KNN","RF"), times = 4),
+        Balanced_Accuracy = c(0.698,0.662,0.678,
+                              0.650,0.620,0.697,
+                              0.572,0.684,0.718,
+                              0.650,0.685,0.741)
+      )
     }
+    
+    datatable(df)
   })
+  
   
   
   
@@ -2691,38 +2719,38 @@ server <- function(input, output, session) {
       df <- data.frame(
         Genes             = rep(c(30, 50, 80, 110), each = 3),
         Model             = rep(c("SVM","KNN","RF"), times = 4),
-        Accuracy = c(0.667, 0.571, 0.714,
+        Accuracy = c(0.714, 0.619, 0.714,
                      0.667, 0.571, 0.667,
-                     0.571, 0.571, 0.714,
-                     0.714, 0.571, 0.714),
-        Kappa = c(0.46, 0.426, 0.568,
-                  0.46, 0.408, 0.495,
-                  0.295, 0.392, 0.55,
-                  0.556, 0.408, 0.538),
-        Macro_F1 = c(0.809, 0.667, 0.69,
-                     0.809, 0.633, 0.629,
-                     0.684, 0.624, 0.648,
-                     0.678, 0.633, 0.848),
-        Precision = c(0.524, 0.567, 0.55,
-                      0.524, 0.643, 0.469,
-                      0.5, 0.625, 0.659,
-                      0.534, 0.643, 0.514),
-        Recall = c(0.437, 0.458, 0.507,
-                   0.437, 0.424, 0.479,
-                   0.365, 0.424, 0.507,
-                   0.507, 0.424, 0.472),
-        Sensitivity = c(0.437, 0.458, 0.507,
-                        0.437, 0.424, 0.479,
-                        0.365, 0.424, 0.507,
-                        0.507, 0.424, 0.472),
-        Specificity = c(0.863, 0.869, 0.898,
-                        0.863, 0.863, 0.878,
-                        0.821, 0.854, 0.887,
-                        0.889, 0.863, 0.884),
-        Balanced_Accuracy = c(0.65, 0.663, 0.702,
-                              0.65, 0.643, 0.678,
-                              0.593, 0.639, 0.697,
-                              0.698, 0.643, 0.678),
+                     0.524, 0.619, 0.762,
+                     0.667, 0.619, 0.762),
+        Kappa = c(0.556, 0.455, 0.538,
+                  0.46, 0.376, 0.507,
+                  0.231, 0.477, 0.62,
+                  0.46, 0.481, 0.639),
+        Macro_F1 = c(0.678, 0.641, 0.848,
+                     0.809, 0.778, 0.667,
+                     0.655, 0.702, 0.698,
+                     0.809, 0.733, 0.761),
+        Precision = c(0.534, 0.531, 0.514,
+                      0.524, 0.389, 0.498,
+                      0.367, 0.583, 0.722,
+                      0.524, 0.667, 0.58),
+        Recall = c(0.507, 0.451, 0.472,
+                   0.437, 0.389, 0.514,
+                   0.337, 0.486, 0.535,
+                   0.437, 0.486, 0.569),
+        Sensitivity = c(0.507, 0.451, 0.472,
+                        0.437, 0.389, 0.514,
+                        0.337, 0.486, 0.535,
+                        0.437, 0.486, 0.569),
+        Specificity = c(0.889, 0.873, 0.884,
+                        0.863, 0.852, 0.881,
+                        0.806, 0.881, 0.902,
+                        0.863, 0.883, 0.913),
+        Balanced_Accuracy = c(0.698, 0.662, 0.678,
+                              0.65, 0.62, 0.697,
+                              0.572, 0.684, 0.718,
+                              0.65, 0.685, 0.741),
         check.names = FALSE,
         stringsAsFactors = FALSE
       )
