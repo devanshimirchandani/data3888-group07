@@ -19,6 +19,12 @@ library(tidyr)
 library(rintrojs)
 library(smotefamily)
 library(pROC)
+library(rsconnect)
+
+rsconnect::setAccountInfo(name='doromego',
+                          token='D6DE2413041D4E56EBE8BB9B124054FA',
+                          secret='D8Q5Xtiewn+SQoJzMkLdFhVtgWhrlzHa4VkemO9h')
+
 
 load_data <- function(dataset = "GSE15852") {
   df <- data.frame(Patient = character(), Grade = factor(levels = c("0", "1", "2", "3")))
@@ -104,7 +110,7 @@ make_result <- function(pred, prob, labels_test, x_test) {
     X1.Chance       = prob[, "X1"],
     X2.Chance       = prob[, "X2"],
     X3.Chance       = prob[, "X3"],
-    check.names = FALSE,    # 保持列名不被自动改成合法 R 名称
+    check.names = FALSE,   
     stringsAsFactors = FALSE
   )
   
@@ -130,6 +136,25 @@ make_result <- function(pred, prob, labels_test, x_test) {
   
   return(df)
 }
+
+all_results_df <- list()
+all_model_list <- list()
+all_genesets_df <- list()
+
+tmp1 <- readRDS("GSE15852_models.rds")
+all_results_df$GSE15852 <- tmp1$result
+all_model_list$GSE15852 <- tmp1$models
+all_genesets_df$GSE15852 <- tmp1$genesets
+
+tmp2 <- readRDS("GSE17907_models.rds")
+all_results_df$GSE17907 <- tmp2$result
+all_model_list$GSE17907 <- tmp2$models
+all_genesets_df$GSE17907 <- tmp2$genesets
+
+tmp3 <- readRDS("Combined_models.rds")
+all_results_df$Combined <- tmp3$result
+all_model_list$Combined <- tmp3$models
+all_genesets_df$Combined <- tmp3$genesets
 
 
 prepare_predictions_all_models <- function() {
@@ -206,13 +231,6 @@ prepare_predictions_all_models <- function() {
   
   list(result=results, models=models, genesets=genesets)
 }
-
-tmp <- prepare_predictions_all_models()
-all_results_df <- list(GSE15852 = tmp$result)
-all_model_list <- list(GSE15852 = tmp$models)
-all_genesets_df <- list(GSE15852 = tmp$genesets)
-
-
 
 
 prepare_predictions_for <- function(dataset_name) {
@@ -296,18 +314,6 @@ prepare_predictions_for <- function(dataset_name) {
   
   list(result=results, models=models, genesets=genesets)
 }
-
-
-
-for (ds in c("GSE17907", "Combined")) {
-  tmp <- prepare_predictions_for(ds)
-  all_results_df[[ds]] <- tmp$result
-  all_model_list[[ds]] <- tmp$models
-  all_genesets_df[[ds]] <- tmp$genesets
-}
-
-
-summary_df <- readRDS("model_summary_df.rds")
 
 
 predict_uploaded_data <- function(uploaded_expr, model_name = "SVM", dataset = "GSE15852") {
@@ -1076,12 +1082,11 @@ server <- function(input, output, session) {
     req(input$dataset_choice, input$model_choice, input$topn_choice)
     ds    <- input$dataset_choice
     model <- input$model_choice
-    gs    <- paste0("top", input$topn_choice)  # 构造 geneset 名称: "top30","top50",...
+    gs    <- paste0("top", input$topn_choice) 
     
     if (ds == "Uploaded" && !is.null(uploaded_exprs())) {
       df <- predict_uploaded_data(uploaded_exprs(), model)
     } else {
-      # 确保这个 dataset、geneset、model 都存在
       if (
         !ds %in% names(all_results_df) ||
         !gs %in% names(all_results_df[[ds]]) ||
@@ -1090,11 +1095,9 @@ server <- function(input, output, session) {
         updateCheckboxGroupInput(session, "selected_genes", choices = character(0))
         return()
       }
-      # 从三维列表中取出对应的 dataframe
       df <- all_results_df[[ds]][[gs]][[model]]
     }
-    
-    # 更新可选基因列表（如果 prediction table 有基因列的话）
+
     if (!is.null(df) && ncol(df) >= 6) {
       gene_cols <- colnames(df)[6:ncol(df)]
       updateCheckboxGroupInput(session, "selected_genes", choices = gene_cols)
@@ -1172,7 +1175,7 @@ server <- function(input, output, session) {
         footer = NULL
       ))
       
-      result <- prepare_comparison_data()
+      result <- readRDS("comparison_cache.rds")
       comparison_results(result)
       saveRDS(result, "comparison_cache.rds")
       
@@ -1298,7 +1301,7 @@ server <- function(input, output, session) {
           fluidRow(
             column(4,
                    selectInput("dataset_choice", "Dataset:",
-                               choices = c("GSE15852", "GSE17907", "Combined", "Uploaded"),
+                               choices = c("GSE15852", "GSE17907", "Combined"),
                                selected = "GSE15852")
             ),
             column(4,
@@ -2046,7 +2049,6 @@ server <- function(input, output, session) {
     if (ds == "Uploaded") {
       df <- predict_uploaded_data(uploaded_exprs(), model)
     } else {
-      # 一样从 all_results_df[[ds]][[gs]][[model]] 拿
       df <- all_results_df[[ds]][[gs]][[model]]
     }
     
@@ -2070,7 +2072,7 @@ server <- function(input, output, session) {
   observeEvent(input$select_all, {
     req(input$dataset_choice, input$model_choice, input$topn_choice)
     ds    <- input$dataset_choice
-    gs    <- paste0("top", input$topn_choice)  # geneset 名称
+    gs    <- paste0("top", input$topn_choice)  
     model <- input$model_choice
     
     df <- all_results_df[[ds]][[gs]][[model]]
@@ -2190,7 +2192,7 @@ server <- function(input, output, session) {
     rownames(expr_mat) <- df$Patient
     grade     <- df$Grade
     
-    gene_set_name <- paste0("top", input$topn_choice)    # e.g. "top30"
+    gene_set_name <- paste0("top", input$topn_choice)   
     genesets      <- all_genesets_df[[input$dataset_choice]]
     if (!gene_set_name %in% names(genesets)) {
       plot.new()
@@ -2210,7 +2212,7 @@ server <- function(input, output, session) {
     pc_df  <- data.frame(PC1 = pca$x[,1], PC2 = pca$x[,2], Grade = grade)
     pc_var <- round(summary(pca)$importance[2,1:2] * 100, 1)
     
-    library(ggplot2)
+
     gg <- ggplot(pc_df, aes(x = PC1, y = PC2, color = Grade)) +
       geom_point(size = 3, alpha = 0.8) +
       theme_minimal(base_size = 13) +
@@ -2220,7 +2222,7 @@ server <- function(input, output, session) {
         y     = paste0("PC2 (", pc_var[2], "% variance)")
       )
     
-    library(dplyr)
+
     grade_counts <- pc_df %>% count(Grade)
     valid_grades <- grade_counts$Grade[grade_counts$n >= 3]
     if (length(valid_grades) > 0) {
@@ -2288,7 +2290,7 @@ server <- function(input, output, session) {
     df$`Predicted Grade` <- factor(df$`Predicted Grade`, levels = c("0","1","2","3"))
     
     if (input$bar_plot_style == "facet") {
-      library(dplyr)
+
       pred_count <- df %>%
         count(`Predicted Grade`) %>%
         rename(Grade = `Predicted Grade`, PredictedCount = n)
@@ -2317,8 +2319,6 @@ server <- function(input, output, session) {
         )
       
     } else {
-      # ✅ Confusion Matrix Heatmap
-      library(dplyr)
       conf_mat <- df %>%
         count(`True Grade`, `Predicted Grade`)
       
@@ -2569,21 +2569,7 @@ server <- function(input, output, session) {
   })
   
   
-  output$summary_plot <- renderPlot({
-    req(summary_df)
-    
-    eval_long <- tidyr::pivot_longer(summary_df, 
-                                     cols = c("Accuracy", "MacroF1", "Kappa"),
-                                     names_to = "Metric", values_to = "Value")
-    
-    ggplot(eval_long, aes(x = GeneSet, y = Value, fill = Model)) +
-      geom_col(position = position_dodge(0.8)) +
-      facet_wrap(~ Metric, scales = "free_y") +
-      labs(title = "Test Set Evaluation: Accuracy, Macro F1, Kappa",
-           x = "Top Gene Set", y = "Metric") +
-      theme_minimal(base_size = 13) +
-      theme(legend.position = "top")
-  })
+
   
   # Glossary
   output$glossary_table <- DT::renderDataTable({
