@@ -123,7 +123,7 @@ all_maps <- bind_rows(map_10810, map_17907) %>%
   filter(!is.na(Cleaned))
 
 # Plot
-ggplot(all_maps, aes(x = Original, fill = Cleaned)) +
+og_dist_plot <- ggplot(all_maps, aes(x = Original, fill = Cleaned)) +
   geom_bar() +
   facet_wrap(~ Dataset, scales = "free_x") +
   scale_fill_manual(values = c(
@@ -139,7 +139,7 @@ ggplot(all_maps, aes(x = Original, fill = Cleaned)) +
 
 all_maps_long <- all_maps %>% count(Original, Cleaned) %>% filter(!is.na(Cleaned))
 
-ggplot(all_maps_long,
+stand_vis <- ggplot(all_maps_long,
        aes(axis1 = Original, axis2 = Cleaned, y = n)) +
   geom_alluvium(aes(fill = Cleaned), width = 1/12) +
   geom_stratum(width = 1/12, fill = "grey80", color = "black") +
@@ -365,7 +365,7 @@ p2 <- ggplot(df_plot, aes(x = sd, fill = status)) +
   theme_minimal()
 
 # Display the plots
-p1 + p2
+filter_plot <- p1 + p2
 ```
 
 
@@ -393,7 +393,7 @@ merged_expr
 table(metadata$grade)
 
 # Number of genes before filtering
-ggplot(metadata, aes(x = grade, fill = grade)) +
+na_removal_grad_dist <- ggplot(metadata, aes(x = grade, fill = grade)) +
   geom_bar() +
   labs(title = "Combined Dataset Grade Distribution",
        x = "Grade", y = "Number of Samples", fill = "Grade") +
@@ -408,7 +408,7 @@ gene_counts <- data.frame(
   Count = c(before_genes, after_genes)
 )
 
-ggplot(gene_counts, aes(x = Status, y = Count, fill = Status)) +
+gene_na_removal <- ggplot(gene_counts, aes(x = Status, y = Count, fill = Status)) +
   geom_bar(stat = "identity") +
   labs(title = "Gene Counts Before and After Removing Genes with Missing Values",
        y = "Number of Genes", x = "") +
@@ -483,12 +483,14 @@ p2 <- plot_pca(pca_df_after, "After Batch Correction")
 
 # Display side by side
 
-p1 + p2
+bat_pca <- p1 + p2
 
 ```
 
 ```{r}
+RNGkind(kind = "L'Ecuyer-CMRG")
 set.seed(123)
+# ========== Train/Test Split ==========
 split_by_grade <- split(metadata, metadata$grade)
 
 train_samples <- unlist(lapply(split_by_grade, function(df) {
@@ -502,7 +504,6 @@ train_samples <- unlist(lapply(split_by_grade, function(df) {
 
 test_samples <- setdiff(metadata$sample, train_samples)
 
-# ========== 6. Extract the expression matrix and metadata ==========
 expr_train <- expr_corrected[, train_samples]
 expr_test  <- expr_corrected[, test_samples]
 
@@ -517,12 +518,32 @@ metadata_test$grade <- factor(metadata_test$grade,
 levels(metadata_train$grade) <- make.names(levels(metadata_train$grade))
 levels(metadata_test$grade)  <- make.names(levels(metadata_test$grade))
 
-
 cat("Training set grade counts:\n")
 print(table(metadata_train$grade))
 cat("Test set grade counts:\n")
 print(table(metadata_test$grade))
+
+
+
 ```
+```{r}
+cat("Dimensions of expr_train:\n")
+print(dim(expr_train))  # genes x samples
+
+cat("Dimensions of expr_test:\n")
+print(dim(expr_test))
+
+cat("Dimensions of metadata_train:\n")
+print(dim(metadata_train))  # samples x variables
+
+cat("Dimensions of metadata_test:\n")
+print(dim(metadata_test))
+
+cat("Sample names in expr_train vs metadata_train:\n")
+print(all(colnames(expr_train) == metadata_train$sample))  # Should be TRUE
+
+```
+
 
 ```{r}
 library(smotefamily)
@@ -559,8 +580,9 @@ metadata_train$grade <- factor(
   levels = c("Normal", "Grade1", "Grade2", "Grade3")
 )
 
-table(metadata_train$grade)
+
 ```
+
 
 ```{r}
 library(ggplot2)
@@ -582,7 +604,7 @@ combined <- rbind(before, after)
 # Ensure factor levels for consistent color ordering
 combined$grade <- factor(combined$grade, levels = grade_levels)
 
-ggplot(combined, aes(x = grade, fill = source)) +
+smote_bar <- ggplot(combined, aes(x = grade, fill = source)) +
   geom_bar(position = "dodge") +
   scale_fill_manual(values = c("Original" = "#E8C7Cd", "SMOTE" = "#FBB1BD")) +
   scale_x_discrete(drop = FALSE) +
@@ -601,11 +623,12 @@ pca_df <- data.frame(pca$x[, 1:2], Source = labels, Grade = grades)
 # Ensure consistent factor levels
 pca_df$Grade <- factor(pca_df$Grade, levels = grade_levels)
 
-ggplot(pca_df, aes(x = PC1, y = PC2, color = Grade, shape = Source)) +
+smote_scatter <- ggplot(pca_df, aes(x = PC1, y = PC2, color = Grade, shape = Source)) +
   geom_point(alpha = 0.7) +
   scale_color_manual(values = grade_palette) +
   labs(title = "PCA: Real vs SMOTE Samples", color = "Grade") +
   theme_minimal()
+
 
 ```
 
@@ -647,15 +670,63 @@ cat("Available gene sets:\n")
 print(names(top_gene_sets))
 
 ```
+
+
+
+
+
+```{r}
+cat("Sample IDs in expr_train:\n")
+print(colnames(expr_balanced))
+
+cat("Sample IDs in metadata_train:\n")
+print(rownames(metadata_train))
+
+common_samples <- intersect(colnames(expr_train), rownames(metadata_train))
+cat("Common sample IDs:\n")
+print(common_samples)
+
+
+cat("Number of samples in expr_train:", length(colnames(expr_train)), "\n")
+cat("Number of samples in metadata_train:", length(rownames(metadata_train)), "\n")
+```
+
+
+```{r}
+dim(expr_balanced)
+dim(metadata_train)
+
+```
+
+
 ```{r}
 library(caret)
 library(ggplot2)
 library(tidyr)
 
+expr_train <- expr_balanced
 set.seed(123)
 results <- list()
 cv_folds <- 5  
 
+# ----------------- Create reproducible seeds -----------------
+generate_seed_list <- function(num_resamples, max_tune_length) {
+  set.seed(123)
+  seed_list <- vector(mode = "list", length = num_resamples + 1)
+  for (i in 1:num_resamples) {
+    seed_list[[i]] <- sample.int(1e6, max_tune_length)
+  }
+  seed_list[[num_resamples + 1]] <- sample.int(1e6, 1)
+  return(seed_list)
+}
+
+svm_grid <- data.frame(C = 1)
+knn_grid <- expand.grid(k = 5:10)
+rf_grid <- expand.grid(mtry = floor(sqrt(ncol(expr_train))))
+max_tune_length <- max(nrow(svm_grid), nrow(knn_grid), nrow(rf_grid))
+seeds <- generate_seed_list(cv_folds, max_tune_length)
+
+# ----------------- Begin training loop -----------------
 y_train <- as.factor(metadata_train$grade)
 levels(y_train) <- make.names(levels(y_train))
 y_test <- make.names(metadata_test$grade)
@@ -666,27 +737,28 @@ summary_list <- list()
 for (gene_set_name in names(top_gene_sets)) {
   
   gene_set <- top_gene_sets[[gene_set_name]]
-  x_train <- t(expr_balanced[gene_set, , drop = FALSE])
+  x_train <- t(expr_train[gene_set, , drop = FALSE])
   x_test  <- t(expr_test[gene_set, , drop = FALSE])
   
   trctrl <- trainControl(
     method = "cv",
     number = cv_folds,
     classProbs = TRUE,
-    savePredictions = "final"
+    savePredictions = "final",
+    seeds = seeds
   )
   
   # Model training
-  svm_mod <- train(x = x_train, y = y_train, method = "svmLinear", trControl = trctrl, tuneGrid = data.frame(C = 1))
-  knn_mod <- train(x = x_train, y = y_train, method = "knn", trControl = trctrl, tuneGrid = expand.grid(k = 5:10))
-  rf_mod  <- train(x = x_train, y = y_train, method = "rf",  trControl = trctrl, ntree = 100)
+  svm_mod <- train(x = x_train, y = y_train, method = "svmLinear", trControl = trctrl, tuneGrid = svm_grid)
+  knn_mod <- train(x = x_train, y = y_train, method = "knn", trControl = trctrl, tuneGrid = knn_grid)
+  rf_mod  <- train(x = x_train, y = y_train, method = "rf",  trControl = trctrl, tuneGrid = rf_grid, ntree = 100)
   
-  # ---------- 1. Save the cross-validation results ----------
+  # ---------- Save CV results ----------
   acc_list[[length(acc_list) + 1]] <- data.frame(GeneSet = gene_set_name, Model = "SVM", Accuracy = svm_mod$resample$Accuracy)
   acc_list[[length(acc_list) + 1]] <- data.frame(GeneSet = gene_set_name, Model = "KNN", Accuracy = knn_mod$resample$Accuracy)
   acc_list[[length(acc_list) + 1]] <- data.frame(GeneSet = gene_set_name, Model = "RF",  Accuracy = rf_mod$resample$Accuracy)
   
-  # ---------- 2. Test set evaluation ----------
+  # ---------- Test set evaluation ----------
   test_preds <- list(
     SVM = predict(svm_mod, x_test),
     KNN = predict(knn_mod, x_test),
@@ -740,7 +812,7 @@ acc_df$GeneSet <- factor(acc_df$GeneSet, levels = desired_order)
 summary_df$GeneSet <- factor(summary_df$GeneSet, levels = desired_order)
 
 # -------- Plot the CV accuracy boxplot --------
-ggplot(acc_df, aes(x = GeneSet, y = Accuracy, fill = Model)) +
+combine_cv_plot <- ggplot(acc_df, aes(x = GeneSet, y = Accuracy, fill = Model)) +
   geom_boxplot(position = position_dodge(0.8), outlier.shape = NA) +
   geom_jitter(position = position_jitterdodge(jitter.width = 0.2, dodge.width = 0.8), size = 1, alpha = 0.6) +
   labs(
@@ -752,11 +824,11 @@ ggplot(acc_df, aes(x = GeneSet, y = Accuracy, fill = Model)) +
   theme(legend.position = "top")
 
 # -------- Plot the Test evaluation metric bar chart --------
-eval_long_combined <- pivot_longer(summary_df, 
+combine_cv_plot <- pivot_longer(summary_df, 
                           cols = c("Accuracy", "MacroF1", "MacroPrecision", "MacroRecall", "MacroSensitivity", "MacroSpecificity", "BalancedAccuracy", "Kappa"),
                           names_to = "Metric", values_to = "Value")
 
-ggplot(eval_long_combined , aes(x = GeneSet, y = Value, fill = Model)) +
+combine_eval_plot <- ggplot(eval_long_combined , aes(x = GeneSet, y = Value, fill = Model)) +
   geom_col(position = position_dodge(0.8)) +
   facet_wrap(~ Metric, scales = "free_y") +
   labs(
@@ -768,6 +840,12 @@ ggplot(eval_long_combined , aes(x = GeneSet, y = Value, fill = Model)) +
   theme(legend.position = "top")
 
 ```
+```{r}
+dim(y_train)
+dim(y_test)
+```
+
+
 ## dataframe of result for combined
 ```{r}
 combine_metrics <- tidyr::pivot_wider(
@@ -776,6 +854,27 @@ combine_metrics <- tidyr::pivot_wider(
   values_from = Value
 )
 combine_metrics
+
+# Add an identifier for easier plotting
+combine_metrics$Config <- paste(combine_metrics$Model, combine_metrics$GeneSet, sep = "_")
+
+# Select top 5 models by Balanced Accuracy
+top5 <- combine_metrics %>%
+  arrange(desc(BalancedAccuracy)) %>%
+  head(5)
+
+# Reshape to long format for ggplot
+top5_long <- melt(top5, id.vars = c("Model", "GeneSet", "Config"))
+
+# Plot heatmap
+combine_heat <- ggplot(top5_long, aes(x = variable, y = Config, fill = value)) +
+  geom_tile(color = "white") +
+  scale_fill_viridis_c(option = "plasma", name = "Metric Value") +
+  labs(title = "Performance Heatmap of Top 5 Models",
+       x = "Metric",
+       y = "Model (Config)") +
+  theme_minimal(base_size = 14) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ```
 
 
@@ -936,6 +1035,7 @@ table(metadata$grade)
 
 
 ```{r}
+RNGkind(kind = "L'Ecuyer-CMRG")
 set.seed(123)
 split_by_grade <- split(metadata, metadata$grade)
 
@@ -1058,6 +1158,24 @@ set.seed(123)
 results <- list()
 cv_folds <- 5  
 
+# ----------------- Create reproducible seeds -----------------
+generate_seed_list <- function(num_resamples, max_tune_length) {
+  set.seed(123)
+  seed_list <- vector(mode = "list", length = num_resamples + 1)
+  for (i in 1:num_resamples) {
+    seed_list[[i]] <- sample.int(1e6, max_tune_length)
+  }
+  seed_list[[num_resamples + 1]] <- sample.int(1e6, 1)
+  return(seed_list)
+}
+
+svm_grid <- data.frame(C = 1)
+knn_grid <- expand.grid(k = 5:10)
+rf_grid <- expand.grid(mtry = floor(sqrt(ncol(expr_train))))
+max_tune_length <- max(nrow(svm_grid), nrow(knn_grid), nrow(rf_grid))
+seeds <- generate_seed_list(cv_folds, max_tune_length)
+
+# ----------------- Begin training loop -----------------
 y_train <- as.factor(metadata_train$grade)
 levels(y_train) <- make.names(levels(y_train))
 y_test <- make.names(metadata_test$grade)
@@ -1068,27 +1186,28 @@ summary_list <- list()
 for (gene_set_name in names(top_gene_sets)) {
   
   gene_set <- top_gene_sets[[gene_set_name]]
-  x_train <- t(expr_balanced[gene_set, , drop = FALSE])
+  x_train <- t(expr_train[gene_set, , drop = FALSE])
   x_test  <- t(expr_test[gene_set, , drop = FALSE])
   
   trctrl <- trainControl(
     method = "cv",
     number = cv_folds,
     classProbs = TRUE,
-    savePredictions = "final"
+    savePredictions = "final",
+    seeds = seeds
   )
   
   # Model training
-  svm_mod <- train(x = x_train, y = y_train, method = "svmLinear", trControl = trctrl, tuneGrid = data.frame(C = 1))
-  knn_mod <- train(x = x_train, y = y_train, method = "knn", trControl = trctrl, tuneGrid = expand.grid(k = 5:10))
-  rf_mod  <- train(x = x_train, y = y_train, method = "rf",  trControl = trctrl, ntree = 100)
+  svm_mod <- train(x = x_train, y = y_train, method = "svmLinear", trControl = trctrl, tuneGrid = svm_grid)
+  knn_mod <- train(x = x_train, y = y_train, method = "knn", trControl = trctrl, tuneGrid = knn_grid)
+  rf_mod  <- train(x = x_train, y = y_train, method = "rf",  trControl = trctrl, tuneGrid = rf_grid, ntree = 100)
   
-  # ---------- 1. Save the cross-validation results ----------
+  # ---------- Save CV results ----------
   acc_list[[length(acc_list) + 1]] <- data.frame(GeneSet = gene_set_name, Model = "SVM", Accuracy = svm_mod$resample$Accuracy)
   acc_list[[length(acc_list) + 1]] <- data.frame(GeneSet = gene_set_name, Model = "KNN", Accuracy = knn_mod$resample$Accuracy)
   acc_list[[length(acc_list) + 1]] <- data.frame(GeneSet = gene_set_name, Model = "RF",  Accuracy = rf_mod$resample$Accuracy)
   
-  # ---------- 2. Test set evaluation ----------
+  # ---------- Test set evaluation ----------
   test_preds <- list(
     SVM = predict(svm_mod, x_test),
     KNN = predict(knn_mod, x_test),
@@ -1142,7 +1261,7 @@ acc_df$GeneSet <- factor(acc_df$GeneSet, levels = desired_order)
 summary_df$GeneSet <- factor(summary_df$GeneSet, levels = desired_order)
 
 # -------- Plot the CV accuracy boxplot --------
-ggplot(acc_df, aes(x = GeneSet, y = Accuracy, fill = Model)) +
+gse17907_cv_plot <- ggplot(acc_df, aes(x = GeneSet, y = Accuracy, fill = Model)) +
   geom_boxplot(position = position_dodge(0.8), outlier.shape = NA) +
   geom_jitter(position = position_jitterdodge(jitter.width = 0.2, dodge.width = 0.8), size = 1, alpha = 0.6) +
   labs(
@@ -1154,11 +1273,11 @@ ggplot(acc_df, aes(x = GeneSet, y = Accuracy, fill = Model)) +
   theme(legend.position = "top")
 
 # -------- Plot the Test evaluation metric bar chart --------
-eval_long_gse17907 <- pivot_longer(summary_df, 
+eval_long_combined <- pivot_longer(summary_df, 
                           cols = c("Accuracy", "MacroF1", "MacroPrecision", "MacroRecall", "MacroSensitivity", "MacroSpecificity", "BalancedAccuracy", "Kappa"),
                           names_to = "Metric", values_to = "Value")
 
-ggplot(eval_long_gse17907, aes(x = GeneSet, y = Value, fill = Model)) +
+gse17907_eval_plot <- ggplot(eval_long_combined , aes(x = GeneSet, y = Value, fill = Model)) +
   geom_col(position = position_dodge(0.8)) +
   facet_wrap(~ Metric, scales = "free_y") +
   labs(
@@ -1169,6 +1288,7 @@ ggplot(eval_long_gse17907, aes(x = GeneSet, y = Value, fill = Model)) +
   theme_minimal(base_size = 13) +
   theme(legend.position = "top")
 
+
 ```
 ## dataframe of result for gse17907
 ```{r}
@@ -1178,6 +1298,30 @@ gse17907_metrics<- tidyr::pivot_wider(
   values_from = Value
 )
 gse17907_metrics
+
+gse17907_metrics$Config <- paste(gse17907_metrics$Model, gse17907_metrics$GeneSet, sep = "_")
+
+# Remove duplicated rows just in case (optional but safe)
+gse17907_metrics <- distinct(gse17907_metrics)
+
+# Select top 5 *distinct* models by Balanced Accuracy
+top5 <- gse17907_metrics %>%
+  arrange(desc(BalancedAccuracy)) %>%
+  slice_head(n = 5)
+
+# Reshape to long format for heatmap
+top5_long <- melt(top5, id.vars = c("Model", "GeneSet", "Config"))
+
+# Plot heatmap
+gse17907_heat <- ggplot(top5_long, aes(x = variable, y = Config, fill = value)) +
+  geom_tile(color = "white") +
+  scale_fill_viridis_c(option = "plasma", name = "Metric Value") +
+  labs(title = "Performance Heatmap of Top 5 Models",
+       x = "Metric",
+       y = "Model (Config)") +
+  theme_minimal(base_size = 14) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
 ```
 
 
@@ -1320,6 +1464,7 @@ table(metadata$grade)
 ```
 
 ```{r}
+RNGkind(kind = "L'Ecuyer-CMRG")
 set.seed(123)
 split_by_grade <- split(metadata, metadata$grade)
 
@@ -1442,6 +1587,24 @@ set.seed(123)
 results <- list()
 cv_folds <- 5  
 
+# ----------------- Create reproducible seeds -----------------
+generate_seed_list <- function(num_resamples, max_tune_length) {
+  set.seed(123)
+  seed_list <- vector(mode = "list", length = num_resamples + 1)
+  for (i in 1:num_resamples) {
+    seed_list[[i]] <- sample.int(1e6, max_tune_length)
+  }
+  seed_list[[num_resamples + 1]] <- sample.int(1e6, 1)
+  return(seed_list)
+}
+
+svm_grid <- data.frame(C = 1)
+knn_grid <- expand.grid(k = 5:10)
+rf_grid <- expand.grid(mtry = floor(sqrt(ncol(expr_train))))
+max_tune_length <- max(nrow(svm_grid), nrow(knn_grid), nrow(rf_grid))
+seeds <- generate_seed_list(cv_folds, max_tune_length)
+
+# ----------------- Begin training loop -----------------
 y_train <- as.factor(metadata_train$grade)
 levels(y_train) <- make.names(levels(y_train))
 y_test <- make.names(metadata_test$grade)
@@ -1452,27 +1615,28 @@ summary_list <- list()
 for (gene_set_name in names(top_gene_sets)) {
   
   gene_set <- top_gene_sets[[gene_set_name]]
-  x_train <- t(expr_balanced[gene_set, , drop = FALSE])
+  x_train <- t(expr_train[gene_set, , drop = FALSE])
   x_test  <- t(expr_test[gene_set, , drop = FALSE])
   
   trctrl <- trainControl(
     method = "cv",
     number = cv_folds,
     classProbs = TRUE,
-    savePredictions = "final"
+    savePredictions = "final",
+    seeds = seeds
   )
   
   # Model training
-  svm_mod <- train(x = x_train, y = y_train, method = "svmLinear", trControl = trctrl, tuneGrid = data.frame(C = 1))
-  knn_mod <- train(x = x_train, y = y_train, method = "knn", trControl = trctrl, tuneGrid = expand.grid(k = 5:10))
-  rf_mod  <- train(x = x_train, y = y_train, method = "rf",  trControl = trctrl, ntree = 100)
+  svm_mod <- train(x = x_train, y = y_train, method = "svmLinear", trControl = trctrl, tuneGrid = svm_grid)
+  knn_mod <- train(x = x_train, y = y_train, method = "knn", trControl = trctrl, tuneGrid = knn_grid)
+  rf_mod  <- train(x = x_train, y = y_train, method = "rf",  trControl = trctrl, tuneGrid = rf_grid, ntree = 100)
   
-  # ---------- 1. Save the cross-validation results ----------
+  # ---------- Save CV results ----------
   acc_list[[length(acc_list) + 1]] <- data.frame(GeneSet = gene_set_name, Model = "SVM", Accuracy = svm_mod$resample$Accuracy)
   acc_list[[length(acc_list) + 1]] <- data.frame(GeneSet = gene_set_name, Model = "KNN", Accuracy = knn_mod$resample$Accuracy)
   acc_list[[length(acc_list) + 1]] <- data.frame(GeneSet = gene_set_name, Model = "RF",  Accuracy = rf_mod$resample$Accuracy)
   
-  # ---------- 2. Test set evaluation ----------
+  # ---------- Test set evaluation ----------
   test_preds <- list(
     SVM = predict(svm_mod, x_test),
     KNN = predict(knn_mod, x_test),
@@ -1526,7 +1690,7 @@ acc_df$GeneSet <- factor(acc_df$GeneSet, levels = desired_order)
 summary_df$GeneSet <- factor(summary_df$GeneSet, levels = desired_order)
 
 # -------- Plot the CV accuracy boxplot --------
-ggplot(acc_df, aes(x = GeneSet, y = Accuracy, fill = Model)) +
+gse15852_cv_plot <- ggplot(acc_df, aes(x = GeneSet, y = Accuracy, fill = Model)) +
   geom_boxplot(position = position_dodge(0.8), outlier.shape = NA) +
   geom_jitter(position = position_jitterdodge(jitter.width = 0.2, dodge.width = 0.8), size = 1, alpha = 0.6) +
   labs(
@@ -1538,11 +1702,11 @@ ggplot(acc_df, aes(x = GeneSet, y = Accuracy, fill = Model)) +
   theme(legend.position = "top")
 
 # -------- Plot the Test evaluation metric bar chart --------
-eval_long_gse15852 <- pivot_longer(summary_df, 
+eval_long_combined <- pivot_longer(summary_df, 
                           cols = c("Accuracy", "MacroF1", "MacroPrecision", "MacroRecall", "MacroSensitivity", "MacroSpecificity", "BalancedAccuracy", "Kappa"),
                           names_to = "Metric", values_to = "Value")
 
-ggplot(eval_long_gse15852 , aes(x = GeneSet, y = Value, fill = Model)) +
+gse15852_eval_plot <- ggplot(eval_long_combined , aes(x = GeneSet, y = Value, fill = Model)) +
   geom_col(position = position_dodge(0.8)) +
   facet_wrap(~ Metric, scales = "free_y") +
   labs(
@@ -1554,6 +1718,7 @@ ggplot(eval_long_gse15852 , aes(x = GeneSet, y = Value, fill = Model)) +
   theme(legend.position = "top")
 
 
+
 ```
 ## dataframe of result for gse15852
 ```{r}
@@ -1563,6 +1728,26 @@ gse15852_metrics<- tidyr::pivot_wider(
   values_from = Value
 )
 gse15852_metrics
+
+gse15852_metrics$Config <- paste(gse15852_metrics$Model, gse15852_metrics$GeneSet, sep = "_")
+
+# Select top 5 models by Balanced Accuracy
+top5 <- gse15852_metrics %>%
+  arrange(desc(BalancedAccuracy)) %>%
+  head(5)
+
+# Reshape to long format for heatmap
+top5_long <- melt(top5, id.vars = c("Model", "GeneSet", "Config"))
+
+# Plot heatmap
+gse15852_heat <- ggplot(top5_long, aes(x = variable, y = Config, fill = value)) +
+  geom_tile(color = "white") +
+  scale_fill_viridis_c(option = "plasma", name = "Metric Value") +
+  labs(title = "Performance Heatmap of Top 5 Models",
+       x = "Metric",
+       y = "Model (Config)") +
+  theme_minimal(base_size = 14) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ```
 # boxplot
 ```{r}
@@ -1601,4 +1786,36 @@ boxplot_plot
 ```
 
 
+```{r}
+# rds saving
+
+all_plots <- list(
+  boxplot_plot,
+  gse15852_metrics,
+  gse15852_eval_plot,
+  gse15852_cv_plot,
+  gse17907_metrics,
+  gse17907_eval_plot,
+  gse17907_cv_plot,
+  combine_metrics,
+  combine_eval_plot,
+  combine_cv_plot,
+  og_dist_plot,
+  stand_vis,
+  plot_by_batch,
+plot_combined,
+filter_plot, 
+gene_na_removal, 
+na_removal_grad_dist, 
+bat_pca, 
+smote_bar,
+smote_scatter,
+combine_heat,
+gse17907_heat,
+gse15852_heat
+)
+
+saveRDS(all_plots, file = "all_model_plots.rds")
+
+```
 
