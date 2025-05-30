@@ -35,6 +35,8 @@ gse <- getGEO("GSE15852")
 gse15852  <- gse[[1]]
 ```
 
+# combined code
+
 ```{r}
 # Function to extract and standardize grade into correct names
 standardize_grade <- function(grades, pattern, replacements, remove_na = TRUE) {
@@ -935,3 +937,778 @@ ggplot(eval_long, aes(x = GeneSet, y = Value, fill = Model)) +
   theme(legend.position = "top")
 ```
 
+
+```{r}
+#Put the first five into the list
+pdata_list <- list(
+  GSE10810 = pdata10810,
+  GSE17907 = pdata17907
+)
+
+required_grades <- c("Normal", "Grade1", "Grade2", "Grade3")
+
+qualified_datasets <- names(Filter(function(pdata) {
+  all(required_grades %in% pdata$grade)
+}, pdata_list))
+
+cat("Datasets containing all four grades:", paste(qualified_datasets, collapse = ", "), "\n")
+
+```
+
+# gse17907 code 
+
+```{r}
+
+# 1. Expression sets
+expr_list <- list(
+
+  gse17907 = exprs(gse17907)
+)
+
+# 2. Phenotype sets
+pdata_list <- list(
+  pdata17907
+)
+
+# 3. Fix phenotype rownames using geo_accession if present
+pdata_list <- lapply(pdata_list, function(p) {
+  if ("geo_accession" %in% colnames(p)) {
+    rownames(p) <- p$geo_accession
+  }
+  return(p)
+})
+
+# Reassign corrected pdata
+
+# 1. Assign pdata
+pdata17907 <- pdata_list[[1]]
+
+
+# 2. Create pheno_list with dataset names
+pheno_list <- list(
+  gse17907 = pdata17907
+)
+
+# 3. Extract grade list and track batch
+grade_list <- Map(function(expr, pheno, batch_name) {
+  sample_names <- colnames(expr)
+  matched_pheno <- pheno[sample_names, , drop = FALSE]
+  grades <- matched_pheno$grade
+  names(grades) <- sample_names
+  # Track batch
+  data.frame(
+    sample = sample_names,
+    grade = grades,
+    batch = batch_name,
+    stringsAsFactors = FALSE
+  )
+}, expr_list, pheno_list, names(pheno_list))
+
+# 4. Combine all grade + batch info into metadata
+metadata <- do.call(rbind, grade_list)
+
+# 5. Clean sample names to remove prefixes (e.g., "gse10810.")
+metadata$sample <- sub(".*\\.", "", metadata$sample)
+
+# 6. Combine expression matrices
+expr_dfs <- lapply(expr_list, function(mat) {
+  df <- as.data.frame(mat)
+  df$gene <- rownames(mat)
+  df
+})
+
+merged_expr <- Reduce(function(x, y) full_join(x, y, by = "gene"), expr_dfs)
+rownames(merged_expr) <- merged_expr$gene
+merged_expr$gene <- NULL
+
+# 7. Ensure metadata matches expression matrix columns
+colnames(merged_expr) <- sub(".*\\.", "", colnames(merged_expr))  # Match cleaned sample names
+metadata <- metadata[match(colnames(merged_expr), metadata$sample), ]
+
+# 8. Final check
+stopifnot(all(metadata$sample == colnames(merged_expr)))
+
+# ✅ Outputs
+metadata
+```
+
+```{r}
+filter_low_expression <- function(expr_data, median_threshold = 5, sd_threshold = 0.5, filter_median = TRUE, filter_sd = TRUE) {
+  # expr_data: expression matrix (genes x samples) or ExpressionSet object
+  # median_threshold: genes with median expression below this will be filtered out
+  # sd_threshold: genes with SD below this will be filtered out
+  # filter_median: whether to filter by median expression
+  # filter_sd: whether to filter by standard deviation (variance)
+  
+  # If input is ExpressionSet, extract expression matrix
+  if (class(expr_data)[1] == "ExpressionSet") {
+    exprs_mat <- exprs(expr_data)
+  } else if (is.matrix(expr_data) || is.data.frame(expr_data)) {
+    exprs_mat <- as.matrix(expr_data)
+  } else {
+    stop("expr_data must be an ExpressionSet or a matrix/data.frame")
+  }
+  
+  keep_median <- rep(TRUE, nrow(exprs_mat))
+  keep_sd <- rep(TRUE, nrow(exprs_mat))
+  
+  if (filter_median) {
+    keep_median <- apply(exprs_mat, 1, median) > median_threshold
+  }
+  if (filter_sd) {
+    keep_sd <- apply(exprs_mat, 1, sd) > sd_threshold
+  }
+  
+  keep <- keep_median & keep_sd
+  
+  # Filter the expression matrix or ExpressionSet accordingly
+  if (class(expr_data)[1] == "ExpressionSet") {
+    filtered <- expr_data[keep, ]
+  } else {
+    filtered <- exprs_mat[keep, , drop = FALSE]
+  }
+  
+  return(filtered)
+}
+
+```
+
+```{r}
+merged_expr <- filter_low_expression(merged_expr, median_threshold = 5, sd_threshold = 0.5)
+dim(merged_expr)
+```
+
+```{r}
+
+
+metadata <- metadata[!is.na(metadata$grade), ]
+metadata
+# 🧼 Remove corresponding columns from merged_expr
+gse10810 <- merged_expr[, metadata$sample]
+anyNA(merged_expr)
+sum(is.na(merged_expr))
+merged_expr <- merged_expr[complete.cases(merged_expr), ]
+merged_expr
+
+table(metadata$grade)
+```
+
+
+
+## split train and test
+```{r}
+set.seed(123)
+split_by_grade <- split(metadata, metadata$grade)
+
+train_samples <- unlist(lapply(split_by_grade, function(df) {
+  n <- nrow(df)
+  if (n >= 2) {
+    sample(df$sample, size = floor(0.8 * n))  
+  } else {
+    sample(df$sample, size = 1)  
+  }
+}))
+
+test_samples <- setdiff(metadata$sample, train_samples)
+
+# ========== 6. Extract the expression matrix and metadata ==========
+expr_train <- merged_expr[, train_samples]
+expr_test  <- merged_expr[, test_samples]
+
+metadata_train <- metadata[match(train_samples, metadata$sample), ]
+metadata_test  <- metadata[match(test_samples, metadata$sample), ]
+
+metadata_train$grade <- factor(metadata_train$grade,
+                               levels = c("Normal", "Grade1", "Grade2", "Grade3"))
+metadata_test$grade <- factor(metadata_test$grade,
+                              levels = c("Normal", "Grade1", "Grade2", "Grade3"))
+
+levels(metadata_train$grade) <- make.names(levels(metadata_train$grade))
+levels(metadata_test$grade)  <- make.names(levels(metadata_test$grade))
+
+
+cat("Training set grade counts:\n")
+print(table(metadata_train$grade))
+cat("Test set grade counts:\n")
+print(table(metadata_test$grade))
+
+expr_balanced <- expr_train
+
+```
+
+# Feature Selection and Top N Genes (ascending p-value)
+```{r}
+# Feature Selection on SMOTE-balanced Data
+labels_factor <- factor(metadata_train$grade, levels = c("Normal", "Grade1", "Grade2", "Grade3"))
+design <- model.matrix(~ 0 + labels_factor)
+colnames(design) <- levels(labels_factor)
+
+fit <- lmFit(expr_balanced, design)
+fit <- eBayes(fit)
+res <- topTable(fit, number = Inf, adjust.method = "BH")
+
+# Significant genes (adjusted p < 0.05)
+sig_genes <- rownames(subset(res, adj.P.Val < 0.05))
+
+# Group means and strong difference filtering (max - min > 1)
+group_means <- sapply(levels(labels_factor), function(lv) {
+  rowMeans(expr_balanced[, metadata_train$grade == lv, drop = FALSE])
+})
+expr_diff <- apply(group_means, 1, function(x) max(x) - min(x))
+sig_genes_strong <- sig_genes[expr_diff[sig_genes] > 1]
+
+# Sort by adjusted p-value
+res_sig_strong <- res[sig_genes_strong, ]
+res_sig_strong <- res_sig_strong[order(res_sig_strong$adj.P.Val), ]
+
+# Build top gene sets only if enough genes exist
+top_gene_sets <- list()
+if (nrow(res_sig_strong) >= 30)  top_gene_sets$top30  <- rownames(res_sig_strong)[1:30]
+if (nrow(res_sig_strong) >= 50)  top_gene_sets$top50  <- rownames(res_sig_strong)[1:50]
+if (nrow(res_sig_strong) >= 80)  top_gene_sets$top80  <- rownames(res_sig_strong)[1:80]
+if (nrow(res_sig_strong) >= 110) top_gene_sets$top110 <- rownames(res_sig_strong)[1:110]
+
+# Optional: show available gene set sizes
+cat("Available gene sets:\n")
+print(names(top_gene_sets))
+
+```
+# SVM KNN RF (different TOP Genes and different K-fold cv)
+```{r}
+# Feature Selection on SMOTE-balanced Data
+labels_factor <- factor(metadata_train$grade, levels = c("Normal", "Grade1", "Grade2", "Grade3"))
+design <- model.matrix(~ 0 + labels_factor)
+colnames(design) <- levels(labels_factor)
+
+fit <- lmFit(expr_balanced, design)
+fit <- eBayes(fit)
+res <- topTable(fit, number = Inf, adjust.method = "BH")
+
+# Significant genes (adjusted p < 0.05)
+sig_genes <- rownames(subset(res, adj.P.Val < 0.05))
+
+# Group means and strong difference filtering (max - min > 1)
+group_means <- sapply(levels(labels_factor), function(lv) {
+  rowMeans(expr_balanced[, metadata_train$grade == lv, drop = FALSE])
+})
+expr_diff <- apply(group_means, 1, function(x) max(x) - min(x))
+sig_genes_strong <- sig_genes[expr_diff[sig_genes] > 1]
+
+# Sort by adjusted p-value
+res_sig_strong <- res[sig_genes_strong, ]
+res_sig_strong <- res_sig_strong[order(res_sig_strong$adj.P.Val), ]
+
+# Build top gene sets only if enough genes exist
+top_gene_sets <- list()
+if (nrow(res_sig_strong) >= 30)  top_gene_sets$top30  <- rownames(res_sig_strong)[1:30]
+if (nrow(res_sig_strong) >= 50)  top_gene_sets$top50  <- rownames(res_sig_strong)[1:50]
+if (nrow(res_sig_strong) >= 80)  top_gene_sets$top80  <- rownames(res_sig_strong)[1:80]
+if (nrow(res_sig_strong) >= 110) top_gene_sets$top110 <- rownames(res_sig_strong)[1:110]
+
+# Optional: show available gene set sizes
+cat("Available gene sets:\n")
+print(names(top_gene_sets))
+
+```
+# SVM KNN RF (different TOP Genes and different K-fold cv)
+```{r}
+library(caret)
+library(ggplot2)
+library(tidyr)
+
+set.seed(123)
+results <- list()
+cv_folds <- 5  
+
+y_train <- as.factor(metadata_train$grade)
+levels(y_train) <- make.names(levels(y_train))
+y_test <- make.names(metadata_test$grade)
+
+acc_list <- list()        
+summary_list <- list()     
+
+for (gene_set_name in names(top_gene_sets)) {
+  
+  gene_set <- top_gene_sets[[gene_set_name]]
+  x_train <- t(expr_balanced[gene_set, , drop = FALSE])
+  x_test  <- t(expr_test[gene_set, , drop = FALSE])
+  
+  trctrl <- trainControl(
+    method = "cv",
+    number = cv_folds,
+    classProbs = TRUE,
+    savePredictions = "final"
+  )
+  
+  # Model training
+  svm_mod <- train(x = x_train, y = y_train, method = "svmLinear", trControl = trctrl, tuneGrid = data.frame(C = 1))
+  knn_mod <- train(x = x_train, y = y_train, method = "knn", trControl = trctrl, tuneGrid = expand.grid(k = 5:10))
+  rf_mod  <- train(x = x_train, y = y_train, method = "rf",  trControl = trctrl, ntree = 100)
+  
+  # ---------- 1. Save the cross-validation results ----------
+  acc_list[[length(acc_list) + 1]] <- data.frame(GeneSet = gene_set_name, Model = "SVM", Accuracy = svm_mod$resample$Accuracy)
+  acc_list[[length(acc_list) + 1]] <- data.frame(GeneSet = gene_set_name, Model = "KNN", Accuracy = knn_mod$resample$Accuracy)
+  acc_list[[length(acc_list) + 1]] <- data.frame(GeneSet = gene_set_name, Model = "RF",  Accuracy = rf_mod$resample$Accuracy)
+  
+  # ---------- 2. Test set evaluation ----------
+  test_preds <- list(
+    SVM = predict(svm_mod, x_test),
+    KNN = predict(knn_mod, x_test),
+    RF  = predict(rf_mod,  x_test)
+  )
+  
+  for (model_name in names(test_preds)) {
+    pred <- factor(test_preds[[model_name]], levels = unique(y_test))
+    truth <- factor(y_test, levels = unique(y_test))
+    cm <- confusionMatrix(pred, truth)
+    
+    acc <- cm$overall["Accuracy"]
+    kappa <- cm$overall["Kappa"]
+    macro_f1 <- mean(cm$byClass[, "F1"], na.rm = TRUE)
+    macro_precision <- mean(cm$byClass[, "Precision"], na.rm = TRUE)
+    macro_recall <- mean(cm$byClass[, "Recall"], na.rm = TRUE)
+    bal_acc <- mean(cm$byClass[, "Balanced Accuracy"], na.rm = TRUE)
+    macro_sens <- mean(cm$byClass[, "Sensitivity"], na.rm = TRUE)
+    macro_spec <- mean(cm$byClass[, "Specificity"], na.rm = TRUE)
+    
+    summary_list[[length(summary_list) + 1]] <- data.frame(
+      GeneSet = gene_set_name,
+      Model = model_name,
+      Accuracy = round(acc, 4),
+      MacroF1 = round(macro_f1, 4),
+      MacroPrecision = round(macro_precision, 4),
+      MacroRecall = round(macro_recall, 4),
+      BalancedAccuracy = round(bal_acc, 4),
+      MacroSensitivity = round(macro_sens, 4),
+      MacroSpecificity = round(macro_spec, 4),
+      Kappa = round(kappa, 4)
+    )
+    
+    cat("\n======", gene_set_name, "-", model_name, "======\n")
+    print(cm$table)
+    cat("Test Accuracy:", round(acc, 3), 
+        "| Kappa:", round(kappa, 3), 
+        "| Macro F1:", round(macro_f1, 3), 
+        "| Precision:", round(macro_precision, 3), 
+        "| Recall:", round(macro_recall, 3),
+        "| Sensitivity:", round(macro_sens, 3),
+        "| Specificity:", round(macro_spec, 3),
+        "| Balanced Accuracy:", round(bal_acc, 3), "\n")
+  }
+}
+
+acc_df <- do.call(rbind, acc_list)
+summary_df <- do.call(rbind, summary_list)
+desired_order <- c("top30", "top50", "top80", "top110")
+acc_df$GeneSet <- factor(acc_df$GeneSet, levels = desired_order)
+summary_df$GeneSet <- factor(summary_df$GeneSet, levels = desired_order)
+
+# -------- Plot the CV accuracy boxplot --------
+ggplot(acc_df, aes(x = GeneSet, y = Accuracy, fill = Model)) +
+  geom_boxplot(position = position_dodge(0.8), outlier.shape = NA) +
+  geom_jitter(position = position_jitterdodge(jitter.width = 0.2, dodge.width = 0.8), size = 1, alpha = 0.6) +
+  labs(
+    title = "Model Accuracy (Linear selection)",
+    x = "Top Gene Set",
+    y = "Cross-validated Accuracy"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "top")
+
+# -------- Plot the Test evaluation metric bar chart --------
+eval_long <- pivot_longer(summary_df, 
+                          cols = c("Accuracy", "MacroF1", "MacroPrecision", "MacroRecall", "MacroSensitivity", "MacroSpecificity", "BalancedAccuracy", "Kappa"),
+                          names_to = "Metric", values_to = "Value")
+
+ggplot(eval_long, aes(x = GeneSet, y = Value, fill = Model)) +
+  geom_col(position = position_dodge(0.8)) +
+  facet_wrap(~ Metric, scales = "free_y") +
+  labs(
+    title = "Test Set Evaluation: Extended Metrics",
+    x = "Top Gene Set",
+    y = "Metric"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "top")
+
+
+```
+
+# gse15852
+
+```{r}
+
+# 1. Expression sets
+expr_list <- list(
+
+  gse15852 = exprs(gse15852)
+)
+
+# 2. Phenotype sets
+pdata_list <- list(
+  pdata15852
+)
+
+# 3. Fix phenotype rownames using geo_accession if present
+pdata_list <- lapply(pdata_list, function(p) {
+  if ("geo_accession" %in% colnames(p)) {
+    rownames(p) <- p$geo_accession
+  }
+  return(p)
+})
+
+# Reassign corrected pdata
+
+# 1. Assign pdata
+pdata15852 <- pdata_list[[1]]
+
+
+# 2. Create pheno_list with dataset names
+pheno_list <- list(
+  gse15852 = pdata15852
+)
+
+# 3. Extract grade list and track batch
+grade_list <- Map(function(expr, pheno, batch_name) {
+  sample_names <- colnames(expr)
+  matched_pheno <- pheno[sample_names, , drop = FALSE]
+  grades <- matched_pheno$grade
+  names(grades) <- sample_names
+  # Track batch
+  data.frame(
+    sample = sample_names,
+    grade = grades,
+    batch = batch_name,
+    stringsAsFactors = FALSE
+  )
+}, expr_list, pheno_list, names(pheno_list))
+
+# 4. Combine all grade + batch info into metadata
+metadata <- do.call(rbind, grade_list)
+
+# 5. Clean sample names to remove prefixes (e.g., "gse10810.")
+metadata$sample <- sub(".*\\.", "", metadata$sample)
+
+# 6. Combine expression matrices
+expr_dfs <- lapply(expr_list, function(mat) {
+  df <- as.data.frame(mat)
+  df$gene <- rownames(mat)
+  df
+})
+
+merged_expr <- Reduce(function(x, y) full_join(x, y, by = "gene"), expr_dfs)
+rownames(merged_expr) <- merged_expr$gene
+merged_expr$gene <- NULL
+
+# 7. Ensure metadata matches expression matrix columns
+colnames(merged_expr) <- sub(".*\\.", "", colnames(merged_expr))  # Match cleaned sample names
+metadata <- metadata[match(colnames(merged_expr), metadata$sample), ]
+
+# 8. Final check
+stopifnot(all(metadata$sample == colnames(merged_expr)))
+
+# ✅ Outputs
+metadata
+```
+
+```{r}
+filter_low_expression <- function(expr_data, median_threshold = 5, sd_threshold = 0.5, filter_median = TRUE, filter_sd = TRUE) {
+  # expr_data: expression matrix (genes x samples) or ExpressionSet object
+  # median_threshold: genes with median expression below this will be filtered out
+  # sd_threshold: genes with SD below this will be filtered out
+  # filter_median: whether to filter by median expression
+  # filter_sd: whether to filter by standard deviation (variance)
+  
+  # If input is ExpressionSet, extract expression matrix
+  if (class(expr_data)[1] == "ExpressionSet") {
+    exprs_mat <- exprs(expr_data)
+  } else if (is.matrix(expr_data) || is.data.frame(expr_data)) {
+    exprs_mat <- as.matrix(expr_data)
+  } else {
+    stop("expr_data must be an ExpressionSet or a matrix/data.frame")
+  }
+  
+  keep_median <- rep(TRUE, nrow(exprs_mat))
+  keep_sd <- rep(TRUE, nrow(exprs_mat))
+  
+  if (filter_median) {
+    keep_median <- apply(exprs_mat, 1, median) > median_threshold
+  }
+  if (filter_sd) {
+    keep_sd <- apply(exprs_mat, 1, sd) > sd_threshold
+  }
+  
+  keep <- keep_median & keep_sd
+  
+  # Filter the expression matrix or ExpressionSet accordingly
+  if (class(expr_data)[1] == "ExpressionSet") {
+    filtered <- expr_data[keep, ]
+  } else {
+    filtered <- exprs_mat[keep, , drop = FALSE]
+  }
+  
+  return(filtered)
+}
+
+```
+
+```{r}
+merged_expr <- filter_low_expression(merged_expr, median_threshold = 5, sd_threshold = 0.5)
+dim(merged_expr)
+```
+
+```{r}
+
+
+metadata <- metadata[!is.na(metadata$grade), ]
+metadata
+# 🧼 Remove corresponding columns from merged_expr
+gse10810 <- merged_expr[, metadata$sample]
+anyNA(merged_expr)
+sum(is.na(merged_expr))
+merged_expr <- merged_expr[complete.cases(merged_expr), ]
+merged_expr
+
+table(metadata$grade)
+```
+
+
+
+## split train and test
+```{r}
+set.seed(123)
+split_by_grade <- split(metadata, metadata$grade)
+
+train_samples <- unlist(lapply(split_by_grade, function(df) {
+  n <- nrow(df)
+  if (n >= 2) {
+    sample(df$sample, size = floor(0.8 * n))  
+  } else {
+    sample(df$sample, size = 1)  
+  }
+}))
+
+test_samples <- setdiff(metadata$sample, train_samples)
+
+# ========== 6. Extract the expression matrix and metadata ==========
+expr_train <- merged_expr[, train_samples]
+expr_test  <- merged_expr[, test_samples]
+
+metadata_train <- metadata[match(train_samples, metadata$sample), ]
+metadata_test  <- metadata[match(test_samples, metadata$sample), ]
+
+metadata_train$grade <- factor(metadata_train$grade,
+                               levels = c("Normal", "Grade1", "Grade2", "Grade3"))
+metadata_test$grade <- factor(metadata_test$grade,
+                              levels = c("Normal", "Grade1", "Grade2", "Grade3"))
+
+levels(metadata_train$grade) <- make.names(levels(metadata_train$grade))
+levels(metadata_test$grade)  <- make.names(levels(metadata_test$grade))
+
+
+cat("Training set grade counts:\n")
+print(table(metadata_train$grade))
+cat("Test set grade counts:\n")
+print(table(metadata_test$grade))
+
+expr_balanced <- expr_train
+
+```
+
+# Feature Selection and Top N Genes (ascending p-value)
+```{r}
+# Feature Selection on SMOTE-balanced Data
+labels_factor <- factor(metadata_train$grade, levels = c("Normal", "Grade1", "Grade2", "Grade3"))
+design <- model.matrix(~ 0 + labels_factor)
+colnames(design) <- levels(labels_factor)
+
+fit <- lmFit(expr_balanced, design)
+fit <- eBayes(fit)
+res <- topTable(fit, number = Inf, adjust.method = "BH")
+
+# Significant genes (adjusted p < 0.05)
+sig_genes <- rownames(subset(res, adj.P.Val < 0.05))
+
+# Group means and strong difference filtering (max - min > 1)
+group_means <- sapply(levels(labels_factor), function(lv) {
+  rowMeans(expr_balanced[, metadata_train$grade == lv, drop = FALSE])
+})
+expr_diff <- apply(group_means, 1, function(x) max(x) - min(x))
+sig_genes_strong <- sig_genes[expr_diff[sig_genes] > 1]
+
+# Sort by adjusted p-value
+res_sig_strong <- res[sig_genes_strong, ]
+res_sig_strong <- res_sig_strong[order(res_sig_strong$adj.P.Val), ]
+
+# Build top gene sets only if enough genes exist
+top_gene_sets <- list()
+if (nrow(res_sig_strong) >= 30)  top_gene_sets$top30  <- rownames(res_sig_strong)[1:30]
+if (nrow(res_sig_strong) >= 50)  top_gene_sets$top50  <- rownames(res_sig_strong)[1:50]
+if (nrow(res_sig_strong) >= 80)  top_gene_sets$top80  <- rownames(res_sig_strong)[1:80]
+if (nrow(res_sig_strong) >= 110) top_gene_sets$top110 <- rownames(res_sig_strong)[1:110]
+
+# Optional: show available gene set sizes
+cat("Available gene sets:\n")
+print(names(top_gene_sets))
+
+```
+# SVM KNN RF (different TOP Genes and different K-fold cv)
+```{r}
+# Feature Selection on SMOTE-balanced Data
+labels_factor <- factor(metadata_train$grade, levels = c("Normal", "Grade1", "Grade2", "Grade3"))
+design <- model.matrix(~ 0 + labels_factor)
+colnames(design) <- levels(labels_factor)
+
+fit <- lmFit(expr_balanced, design)
+fit <- eBayes(fit)
+res <- topTable(fit, number = Inf, adjust.method = "BH")
+
+# Significant genes (adjusted p < 0.05)
+sig_genes <- rownames(subset(res, adj.P.Val < 0.05))
+
+# Group means and strong difference filtering (max - min > 1)
+group_means <- sapply(levels(labels_factor), function(lv) {
+  rowMeans(expr_balanced[, metadata_train$grade == lv, drop = FALSE])
+})
+expr_diff <- apply(group_means, 1, function(x) max(x) - min(x))
+sig_genes_strong <- sig_genes[expr_diff[sig_genes] > 1]
+
+# Sort by adjusted p-value
+res_sig_strong <- res[sig_genes_strong, ]
+res_sig_strong <- res_sig_strong[order(res_sig_strong$adj.P.Val), ]
+
+# Build top gene sets only if enough genes exist
+top_gene_sets <- list()
+if (nrow(res_sig_strong) >= 30)  top_gene_sets$top30  <- rownames(res_sig_strong)[1:30]
+if (nrow(res_sig_strong) >= 50)  top_gene_sets$top50  <- rownames(res_sig_strong)[1:50]
+if (nrow(res_sig_strong) >= 80)  top_gene_sets$top80  <- rownames(res_sig_strong)[1:80]
+if (nrow(res_sig_strong) >= 110) top_gene_sets$top110 <- rownames(res_sig_strong)[1:110]
+
+# Optional: show available gene set sizes
+cat("Available gene sets:\n")
+print(names(top_gene_sets))
+
+```
+# SVM KNN RF (different TOP Genes and different K-fold cv)
+```{r}
+library(caret)
+library(ggplot2)
+library(tidyr)
+
+set.seed(123)
+results <- list()
+cv_folds <- 5  
+
+y_train <- as.factor(metadata_train$grade)
+levels(y_train) <- make.names(levels(y_train))
+y_test <- make.names(metadata_test$grade)
+
+acc_list <- list()        
+summary_list <- list()     
+
+for (gene_set_name in names(top_gene_sets)) {
+  
+  gene_set <- top_gene_sets[[gene_set_name]]
+  x_train <- t(expr_balanced[gene_set, , drop = FALSE])
+  x_test  <- t(expr_test[gene_set, , drop = FALSE])
+  
+  trctrl <- trainControl(
+    method = "cv",
+    number = cv_folds,
+    classProbs = TRUE,
+    savePredictions = "final"
+  )
+  
+  # Model training
+  svm_mod <- train(x = x_train, y = y_train, method = "svmLinear", trControl = trctrl, tuneGrid = data.frame(C = 1))
+  knn_mod <- train(x = x_train, y = y_train, method = "knn", trControl = trctrl, tuneGrid = expand.grid(k = 5:10))
+  rf_mod  <- train(x = x_train, y = y_train, method = "rf",  trControl = trctrl, ntree = 100)
+  
+  # ---------- 1. Save the cross-validation results ----------
+  acc_list[[length(acc_list) + 1]] <- data.frame(GeneSet = gene_set_name, Model = "SVM", Accuracy = svm_mod$resample$Accuracy)
+  acc_list[[length(acc_list) + 1]] <- data.frame(GeneSet = gene_set_name, Model = "KNN", Accuracy = knn_mod$resample$Accuracy)
+  acc_list[[length(acc_list) + 1]] <- data.frame(GeneSet = gene_set_name, Model = "RF",  Accuracy = rf_mod$resample$Accuracy)
+  
+  # ---------- 2. Test set evaluation ----------
+  test_preds <- list(
+    SVM = predict(svm_mod, x_test),
+    KNN = predict(knn_mod, x_test),
+    RF  = predict(rf_mod,  x_test)
+  )
+  
+  for (model_name in names(test_preds)) {
+    pred <- factor(test_preds[[model_name]], levels = unique(y_test))
+    truth <- factor(y_test, levels = unique(y_test))
+    cm <- confusionMatrix(pred, truth)
+    
+    acc <- cm$overall["Accuracy"]
+    kappa <- cm$overall["Kappa"]
+    macro_f1 <- mean(cm$byClass[, "F1"], na.rm = TRUE)
+    macro_precision <- mean(cm$byClass[, "Precision"], na.rm = TRUE)
+    macro_recall <- mean(cm$byClass[, "Recall"], na.rm = TRUE)
+    bal_acc <- mean(cm$byClass[, "Balanced Accuracy"], na.rm = TRUE)
+    macro_sens <- mean(cm$byClass[, "Sensitivity"], na.rm = TRUE)
+    macro_spec <- mean(cm$byClass[, "Specificity"], na.rm = TRUE)
+    
+    summary_list[[length(summary_list) + 1]] <- data.frame(
+      GeneSet = gene_set_name,
+      Model = model_name,
+      Accuracy = round(acc, 4),
+      MacroF1 = round(macro_f1, 4),
+      MacroPrecision = round(macro_precision, 4),
+      MacroRecall = round(macro_recall, 4),
+      BalancedAccuracy = round(bal_acc, 4),
+      MacroSensitivity = round(macro_sens, 4),
+      MacroSpecificity = round(macro_spec, 4),
+      Kappa = round(kappa, 4)
+    )
+    
+    cat("\n======", gene_set_name, "-", model_name, "======\n")
+    print(cm$table)
+    cat("Test Accuracy:", round(acc, 3), 
+        "| Kappa:", round(kappa, 3), 
+        "| Macro F1:", round(macro_f1, 3), 
+        "| Precision:", round(macro_precision, 3), 
+        "| Recall:", round(macro_recall, 3),
+        "| Sensitivity:", round(macro_sens, 3),
+        "| Specificity:", round(macro_spec, 3),
+        "| Balanced Accuracy:", round(bal_acc, 3), "\n")
+  }
+}
+
+acc_df <- do.call(rbind, acc_list)
+summary_df <- do.call(rbind, summary_list)
+desired_order <- c("top30", "top50", "top80", "top110")
+acc_df$GeneSet <- factor(acc_df$GeneSet, levels = desired_order)
+summary_df$GeneSet <- factor(summary_df$GeneSet, levels = desired_order)
+
+# -------- Plot the CV accuracy boxplot --------
+ggplot(acc_df, aes(x = GeneSet, y = Accuracy, fill = Model)) +
+  geom_boxplot(position = position_dodge(0.8), outlier.shape = NA) +
+  geom_jitter(position = position_jitterdodge(jitter.width = 0.2, dodge.width = 0.8), size = 1, alpha = 0.6) +
+  labs(
+    title = "Model Accuracy (Linear selection)",
+    x = "Top Gene Set",
+    y = "Cross-validated Accuracy"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "top")
+
+# -------- Plot the Test evaluation metric bar chart --------
+eval_long <- pivot_longer(summary_df, 
+                          cols = c("Accuracy", "MacroF1", "MacroPrecision", "MacroRecall", "MacroSensitivity", "MacroSpecificity", "BalancedAccuracy", "Kappa"),
+                          names_to = "Metric", values_to = "Value")
+
+ggplot(eval_long, aes(x = GeneSet, y = Value, fill = Model)) +
+  geom_col(position = position_dodge(0.8)) +
+  facet_wrap(~ Metric, scales = "free_y") +
+  labs(
+    title = "Test Set Evaluation: Extended Metrics",
+    x = "Top Gene Set",
+    y = "Metric"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "top")
+
+
+```
