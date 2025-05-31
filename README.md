@@ -19,3 +19,9 @@ Module 4: Risk Evaluation & Interpretation
 
 You can directly view all the files of the Shiny [here](https://github.com/devanshimirchandani/data3888-group07/commit/5c087ca90fda34c5537910ec75bb61ec9f1e0c85).
 Preva Shiny Website: https://doromego.shinyapps.io/Preva/
+
+## Reproducing the Report Plots (excluding Shiny screenshots)
+
+This section contains the plots generated to support the report, aside from the Shiny screenshots.
+
+You can find the full R Markdown script for reproducing these plots here: [report_plot.Rmd](https://github.com/devanshimirchandani/data3888-group07/blob/main/report_plot.Rmd).
