@@ -15,13 +15,29 @@ Module 3: Predictive Model Building (SVM, KNN, RF with tunable parameters)
 Module 4: Risk Evaluation & Interpretation
 (Accuracy, F1, Kappa, ROC/AUC, confusion matrix, top genes)
 
-## View the Shiny 
+## Repository Structure
 
-You can directly view all the files of the Shiny [here](https://github.com/devanshimirchandani/data3888-group07/commit/5c087ca90fda34c5537910ec75bb61ec9f1e0c85).
-Preva Shiny Website: https://doromego.shinyapps.io/Preva/
+- **Shiny/**
+  
+  Contains the complete Shiny application, including:
+  - `app.R` — the main app code
+  - `www/` — images used by the Shiny app
+  - data files and supporting materials
 
-## Reproducing the Report Plots (excluding Shiny screenshots)
+- **Report/**
+  
+  Contains the final report and the R Markdown code to reproduce all plots included in the report. Key files:
+  - `report_plot.RData` — saved plots for report
+  - report scripts and documentation
 
-This section contains the plots generated to support the report, aside from the Shiny screenshots.
+- **Pre-Project/**
+  
+  Contains our earlier work, including preliminary data exploration and initial Shiny app drafts. Useful for understanding our iterative workflow.
 
-You can find the full R Markdown script for reproducing these plots here: [report_plot.Rmd](https://github.com/devanshimirchandani/data3888-group07/blob/main/report_plot.Rmd).
+## Datasets
+
+We used three main microarray datasets:
+
+- **Dataset 1**: **GSE15852** — 86 samples, 43 tumors
+- **Dataset 2**: **GSE10810** — 58 samples, 31 tumors
+- **Dataset 3**: **GSE17907** — 55 samples, 47 tumors
