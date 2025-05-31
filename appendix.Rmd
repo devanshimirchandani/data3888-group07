@@ -918,7 +918,7 @@ top5_long <- melt(top5, id.vars = c("Model", "GeneSet", "Config"))
 # Plot heatmap
 combine_heat <- ggplot(top5_long, aes(x = variable, y = Config, fill = value)) +
   geom_tile(color = "white") +
-  scale_fill_viridis_c(option = "plasma", name = "Metric Value") +
+  scale_fill_gradient(low = "white", high = "#d07095", name = "Metric Value") +
   labs(title = "Performance Heatmap of Top 5 Models",
        x = "Metric",
        y = "Model (Config)") +
@@ -1364,7 +1364,7 @@ top5_long <- melt(top5, id.vars = c("Model", "GeneSet", "Config"))
 # Plot heatmap
 gse17907_heat <- ggplot(top5_long, aes(x = variable, y = Config, fill = value)) +
   geom_tile(color = "white") +
-  scale_fill_viridis_c(option = "plasma", name = "Metric Value") +
+  scale_fill_gradient(low = "white", high = "#d07095", name = "Metric Value") +
   labs(title = "Performance Heatmap of Top 5 Models",
        x = "Metric",
        y = "Model (Config)") +
@@ -1791,7 +1791,7 @@ top5_long <- melt(top5, id.vars = c("Model", "GeneSet", "Config"))
 # Plot heatmap
 gse15852_heat <- ggplot(top5_long, aes(x = variable, y = Config, fill = value)) +
   geom_tile(color = "white") +
-  scale_fill_viridis_c(option = "plasma", name = "Metric Value") +
+  scale_fill_gradient(low = "white", high = "#d07095", name = "Metric Value") +
   labs(title = "Performance Heatmap of Top 5 Models",
        x = "Metric",
        y = "Model (Config)") +
