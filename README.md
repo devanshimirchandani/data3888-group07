@@ -17,7 +17,7 @@ Module 4: Risk Evaluation & Interpretation
 
 ## Repository Structure
 
-### **Shiny**
+### **Shiny/**
 Contains the full Shiny application, including UI, server logic, and pre-processed data used in the app.
 
 Key components:
