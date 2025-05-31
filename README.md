@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="./Pre-Project/Preva.png" alt="Preva Logo" height="100">
+  <img src="./Pre-Project/Preva.png" alt="Preva Logo" height="300">
 </p>
 
-# Preva — Breast Cancer Risk Calculator from Gene Expression Data
+# Preva – Breast Cancer Risk Calculator
 ## Project Overview
 Preva is an interactive risk calculator that predicts breast cancer severity from gene expression data.
 This app was developed as a group project for DATA3888 (2025 S1) at the University of Sydney. (data3888-group07)
