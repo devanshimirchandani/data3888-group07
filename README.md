@@ -9,6 +9,8 @@ Preva is an interactive risk calculator that predicts breast cancer severity fro
 This app was developed as a group project for DATA3888 (2025 S1) at the University of Sydney.  
 It is designed as a modular educational tool that guides users from raw data to prediction, helping students and learners explore key bioinformatics workflows in a hands-on way.
 
+> **Try Preva Now!!!:** [`https://doromego.shinyapps.io/Preva/`](https://doromego.shinyapps.io/Preva/)
+
 <p align="center">
   <img src="./Report/figure1.png" alt="Workflow Diagram" width="700">
 </p>
