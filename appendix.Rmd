@@ -526,23 +526,8 @@ print(table(metadata_test$grade))
 
 
 ```
-```{r}
-cat("Dimensions of expr_train:\n")
-print(dim(expr_train))  # genes x samples
 
-cat("Dimensions of expr_test:\n")
-print(dim(expr_test))
 
-cat("Dimensions of metadata_train:\n")
-print(dim(metadata_train))  # samples x variables
-
-cat("Dimensions of metadata_test:\n")
-print(dim(metadata_test))
-
-cat("Sample names in expr_train vs metadata_train:\n")
-print(all(colnames(expr_train) == metadata_train$sample))  # Should be TRUE
-
-```
 
 
 ```{r}
@@ -672,7 +657,70 @@ print(names(top_gene_sets))
 ```
 
 
+```{r}
+# Load libraries
+library(ComplexHeatmap)
+library(circlize)
+library(hgu133plus2.db)  # For mapping probe IDs to gene symbols
+library(AnnotationDbi)
 
+# Subset expression data and scale by gene (Z-score)
+selected_genes <- top_gene_sets$top30
+expr_selected <- expr_balanced[selected_genes, ]
+expr_selected <- t(scale(t(expr_selected)))  # row-wise Z-score
+
+# Grade annotation: different shades of purple
+grade_colors <- c(
+  "Normal" = "#d8b5d8",
+  "Grade1" = "#b279b2",
+  "Grade2" = "#944f94",
+  "Grade3" = "#6a2e6a"
+)
+
+grade_annotation <- HeatmapAnnotation(
+  Grade = metadata_train$grade,
+  col = list(Grade = grade_colors),
+  annotation_name_side = "left"
+)
+
+# Row order by significance
+gene_order <- rownames(res_sig_strong)[rownames(res_sig_strong) %in% selected_genes]
+expr_selected <- expr_selected[gene_order, ]
+
+# Convert probe IDs to gene symbols
+gene_map <- AnnotationDbi::select(hgu133plus2.db,
+                                  keys = rownames(expr_selected),
+                                  columns = c("SYMBOL"),
+                                  keytype = "PROBEID")
+# Remove duplicates and map
+gene_map <- gene_map[!duplicated(gene_map$PROBEID), ]
+gene_symbols <- gene_map$SYMBOL[match(rownames(expr_selected), gene_map$PROBEID)]
+
+# Replace rownames (probes) with gene symbols
+rownames(expr_selected) <- ifelse(is.na(gene_symbols), rownames(expr_selected), gene_symbols)
+
+# Define pink color gradient for Z-scores
+z_col_fun <- colorRamp2(c(-2, 0, 2), c("#fbeffb", "#f7b6d2", "#c51b8a"))
+
+# Create heatmap
+gene_heat <- Heatmap(
+  expr_selected,
+  name = "Z-score",
+  col = z_col_fun,
+  bottom_annotation = grade_annotation,
+  cluster_columns = TRUE,
+  cluster_rows = TRUE,  # Cluster genes
+  show_row_names = TRUE,
+  show_column_names = FALSE,
+  row_names_gp = gpar(fontsize = 10),
+  column_title = "Samples",
+  row_title = "Top Genes (adj.P.Val)",
+  heatmap_legend_param = list(title = "Z-score")
+)
+
+
+gene_heat_drawn <- draw(gene_heat)
+```
 
 
 ```{r}
@@ -824,7 +872,7 @@ combine_cv_plot <- ggplot(acc_df, aes(x = GeneSet, y = Accuracy, fill = Model)) 
   theme(legend.position = "top")
 
 # -------- Plot the Test evaluation metric bar chart --------
-combine_cv_plot <- pivot_longer(summary_df, 
+eval_long_combined <- pivot_longer(summary_df, 
                           cols = c("Accuracy", "MacroF1", "MacroPrecision", "MacroRecall", "MacroSensitivity", "MacroSpecificity", "BalancedAccuracy", "Kappa"),
                           names_to = "Metric", values_to = "Value")
 
@@ -840,6 +888,7 @@ combine_eval_plot <- ggplot(eval_long_combined , aes(x = GeneSet, y = Value, fil
   theme(legend.position = "top")
 
 ```
+
 ```{r}
 dim(y_train)
 dim(y_test)
@@ -1273,11 +1322,11 @@ gse17907_cv_plot <- ggplot(acc_df, aes(x = GeneSet, y = Accuracy, fill = Model))
   theme(legend.position = "top")
 
 # -------- Plot the Test evaluation metric bar chart --------
-eval_long_combined <- pivot_longer(summary_df, 
+eval_long_gse17907 <- pivot_longer(summary_df, 
                           cols = c("Accuracy", "MacroF1", "MacroPrecision", "MacroRecall", "MacroSensitivity", "MacroSpecificity", "BalancedAccuracy", "Kappa"),
                           names_to = "Metric", values_to = "Value")
 
-gse17907_eval_plot <- ggplot(eval_long_combined , aes(x = GeneSet, y = Value, fill = Model)) +
+gse17907_eval_plot <- ggplot(eval_long_gse17907 , aes(x = GeneSet, y = Value, fill = Model)) +
   geom_col(position = position_dodge(0.8)) +
   facet_wrap(~ Metric, scales = "free_y") +
   labs(
@@ -1702,11 +1751,11 @@ gse15852_cv_plot <- ggplot(acc_df, aes(x = GeneSet, y = Accuracy, fill = Model))
   theme(legend.position = "top")
 
 # -------- Plot the Test evaluation metric bar chart --------
-eval_long_combined <- pivot_longer(summary_df, 
+eval_long_gse15852 <- pivot_longer(summary_df, 
                           cols = c("Accuracy", "MacroF1", "MacroPrecision", "MacroRecall", "MacroSensitivity", "MacroSpecificity", "BalancedAccuracy", "Kappa"),
                           names_to = "Metric", values_to = "Value")
 
-gse15852_eval_plot <- ggplot(eval_long_combined , aes(x = GeneSet, y = Value, fill = Model)) +
+gse15852_eval_plot <- ggplot(eval_long_gse15852 , aes(x = GeneSet, y = Value, fill = Model)) +
   geom_col(position = position_dodge(0.8)) +
   facet_wrap(~ Metric, scales = "free_y") +
   labs(
@@ -1762,9 +1811,10 @@ gse15852_metrics$Dataset <- "GSE15852"
 all_metrics <- bind_rows(combine_metrics, gse17907_metrics, gse15852_metrics)
 
 metrics_long <- all_metrics %>%
-  select(Dataset, Model, GeneSet, BalancedAccuracy, MacroF1) %>%
+  dplyr::select(Dataset, Model, GeneSet, BalancedAccuracy, MacroF1) %>%
   pivot_longer(cols = c("BalancedAccuracy", "MacroF1"),
                names_to = "Metric", values_to = "Value")
+
 
 boxplot_plot <- ggplot(metrics_long, aes(x = Model, y = Value, fill = Dataset)) +
   geom_boxplot(outlier.shape = NA, alpha = 0.7, position = position_dodge(0.8)) +
@@ -1812,7 +1862,8 @@ smote_bar,
 smote_scatter,
 combine_heat,
 gse17907_heat,
-gse15852_heat
+gse15852_heat,
+gene_heat_drawn
 )
 
 saveRDS(all_plots, file = "all_model_plots.rds")
