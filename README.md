@@ -79,7 +79,7 @@ Key components:
 * [`shinypng/`](./Report/shinypng/) — Screenshots of Shiny application functionality, used in the Appendix for illustrative purposes.
 
 > **Last updated:** 1 June 2025
-> * [`Click here to view the full report`](./Report/Report.html)
+> * [`Click here to view the full report`](./Report/Report.html)(best viewed on GitHub; for local viewing, ensure all associated files are downloaded)
 
 
 ### **Pre-Project/**
