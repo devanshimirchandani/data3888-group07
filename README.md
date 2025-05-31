@@ -17,7 +17,7 @@ Module 4: Risk Evaluation & Interpretation
 
 ## Repository Structure
 
-### **Shiny/**
+### **Shiny**
 Contains the full Shiny application, including UI, server logic, and pre-processed data used in the app.
 
 Key components:
@@ -32,7 +32,7 @@ Key components:
   * [`data_GSE17907.RData`](./Shiny/data_GSE17907.RData)
   * [`data_GSE10810.RData`](./Shiny/data_GSE10810.RData)
   * [`data_Combined.RData`](./Shiny/data_Combined.RData)
-    These are **filtered gene expression datasets**, pre-processed and ready for use — no need to download from external databases.
+  These are **filtered gene expression datasets**, pre-processed and ready for use — no need to download from external databases.
 
 * Pre-trained model files (`.rds`), generated via [`save_models.R`](./Shiny/save_models.R):
 
@@ -40,7 +40,7 @@ Key components:
   * [`GSE17907_models.rds`](./Shiny/GSE17907_models.rds)
   * [`Combined_models.rds`](./Shiny/Combined_models.rds)
   * [`comparison_cache.rds`](./Shiny/comparison_cache.rds)
-    These files store the results of three predictive models trained on the datasets. They are loaded directly by the app.
+  These files store the results of three predictive models trained on the datasets. They are loaded directly by the app.
 
 * Optional media:
 
