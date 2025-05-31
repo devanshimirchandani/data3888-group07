@@ -91,28 +91,28 @@ We used three publicly available **gene expression microarray datasets** from th
 
 #### **GSE15852**
 
-* **Description:** Gene expression profiles from
-      • 43 **normal** breast tissue samples
-      • 43 **tumor** samples spanning Grades I–III
+* **Description:** Gene expression profiles from <br>
+  &emsp;43 **normal** breast tissue samples <br>
+  &emsp;43 **tumor** samples spanning Grades I–III <br>
 * **Usage:** Frequently used in breast cancer subtype classification.
 * **Gene count:** 22,282
-* **NCBI GEO:** [View GSE15852](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE15852)
+* **NCBI GEO:** [`View GSE15852`](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE15852)
 
 #### **GSE17907**
 
-* **Description:** Enriched for high-grade cases, includes
-      • 55 **breast cancer** samples
-      • Grade 3 dominant (34 out of 55)
+* **Description:** Enriched for high-grade cases, includes <br>
+  &emsp;55 **breast cancer** samples <br>
+  &emsp;Grade 3 dominant (34 out of 55) <br>
 * **Usage:** Highlights more aggressive tumor phenotypes.
 * **Gene count:** 24,577
-* **NCBI GEO:** [View GSE17907](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE17907)
+* **NCBI GEO:** [`View GSE17907`](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE17907)
 
 #### **Combined Dataset (GSE10810 + GSE17907)**
 
 * **Description:**  
-  **GSE10810**: Moderate-size dataset with 31 tumors  
-  **GSE17907**: High-grade enrichment  
-  Combined using batch correction for model generalisation
+  &emsp;**GSE10810**: Moderate-size dataset with 31 tumors <br> 
+  &emsp;**GSE17907**: High-grade enrichment <br>
+  &emsp;Combined using batch correction for model generalisation
 
 * **Gene count:** 16,760
 * **Purpose:** Enables training of more robust predictive models through broader sample representation.
