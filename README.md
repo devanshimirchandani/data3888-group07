@@ -14,3 +14,8 @@ Module 3: Predictive Model Building (SVM, KNN, RF with tunable parameters)
 
 Module 4: Risk Evaluation & Interpretation
 (Accuracy, F1, Kappa, ROC/AUC, confusion matrix, top genes)
+
+## View the Shiny 
+
+You can directly view all the files of the Shiny [here](https://github.com/devanshimirchandani/data3888-group07/commit/5c087ca90fda34c5537910ec75bb61ec9f1e0c85).
+Preva Shiny Website: https://doromego.shinyapps.io/Preva/
