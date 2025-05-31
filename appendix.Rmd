@@ -1840,7 +1840,6 @@ boxplot_plot
 # rds saving
 
 all_plots <- list(
-  boxplot_plot,
   gse15852_metrics,
   gse15852_eval_plot,
   gse15852_cv_plot,
@@ -1862,11 +1861,14 @@ smote_bar,
 smote_scatter,
 combine_heat,
 gse17907_heat,
-gse15852_heat,
-gene_heat_drawn
+gse15852_heat
 )
 
 saveRDS(all_plots, file = "all_model_plots.rds")
 
 ```
 
+# Svae plot as RData
+```{r}
+save(boxplot_plot, gene_heat_drawn, file = "report_plot.RData")
+```
