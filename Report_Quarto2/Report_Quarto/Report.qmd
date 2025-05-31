@@ -1,0 +1,2044 @@
+---
+title: ""  # 留空表示不启用默认标题
+author: "Devanshi Mirchandani (520123283), Dorothea (), Weihao Cheng (530086446), Tommi Smits (520487200) and Hamish Sultana ()"
+
+format:
+  html:
+    css: custom.css
+    theme: default  # 不要写 null，Quarto 识别不了
+    toc: true
+    toc-depth: 3
+    toc-location: right
+    code-fold: true
+    number-sections: true
+    include-in-header: logo.html  # 这里拼写必须是 include-in-header（注意不是 includes）
+---
+
+# Executive Summary
+
+Modern biomedical research generates vast volumes of genomic data, yet for many students, especially those at the start of their research journey—the path from raw gene expression profiles to clinically actionable insights remains unclear. While theoretical frameworks are covered in coursework, few resources offer guided, hands-on exposure to real-world biomedical datasets. Preva addresses this gap by providing an interactive EdTech tool designed specifically for Honours-level students entering the field of biomedical data science or precision medicine.
+
+Developed using R Shiny, Preva walks users through the complete data science workflow: from understanding the biological foundations of breast cancer to pre-processing high-dimensional gene expression data and building classification models. It introduces students to key concepts in cancer pathology and gene regulation before guiding them through practical techniques such as data transformation, variable selection, and model development using algorithms like support vector machines (SVM), k-nearest neighbours (KNN), and random forests (RF).
+
+The tool uses real-world datasets labeled by tumor grade, an ordinal clinical variable often used to assess disease severity and progression. This structure allows students to build and evaluate models aligned with how risk is communicated in clinical settings. Robust performance metrics such as balanced accuracy, F1-score, Kappa, and specificity help students assess their models in the face of class imbalance, a common issue in medical data.
+
+Importantly, Preva was designed with accessibility in mind. It assumes minimal coding experience and is tailored for students who are curious about how genomics intersects with machine learning, but may lack confidence in programming or statistical modeling. Through interactive visualisations, scaffolded guidance, quizzes, and reflective prompts, students gain not only technical skills but also critical thinking abilities around model interpretability and translational challenges.
+
+By offering an approachable yet rigorous learning experience, Preva transforms passive instruction into active discovery. It is a modular, scalable resource that enables Honours students to develop foundational competencies in biomedical modeling—and empowers them to take their first steps into the world of data-driven healthcare.
+
+```{r fig-preva, fig.align='left', out.width='100%', fig.cap='Preva Learning Objectives Overview', fig.pos='H'}
+knitr::include_graphics("figure1.png")
+```
+
+# Background & Context
+
+Breast cancer is the most commonly diagnosed cancer among Australian women, with over 21,000 new cases projected in 2024—approximately 1 in 7 women will be diagnosed in their lifetime (National Breast Cancer Foundation, 2024). While most diagnoses occur in women over 50, more than 1,000 cases were reported among women under 40 in 2023 (Breast Cancer Network Australia, 2023). Early detection remains a key factor in survival: when diagnosed at a localized stage, the five-year survival rate is 99%, compared to just 27% when cancer has spread (Medshun, 2023).
+
+Advances in genomics and high-throughput technologies, such as microarrays and RNA sequencing, have opened new frontiers in disease prediction by enabling researchers to profile gene expression on a molecular level. These datasets are high-dimensional, often containing thousands of variables and only a limited number of samples. While statistically challenging, they hold tremendous potential to uncover biological signals that traditional imaging or self-reported data may overlook. Predictive models trained on gene expression data could help flag risk long before physical symptoms appear—providing powerful support for early intervention and personalized care.
+
+Yet despite its promise, the field of genomic modeling remains inaccessible to many students, especially those who are new to coding or unsure how to apply data science concepts to real-world biological problems. This disconnect is particularly pronounced at the Honours level, where students often encounter complex datasets for the first time without sufficient scaffolding.
+
+Preva was created to serve as a first point of contact for these students—offering an approachable, guided introduction to the practice of building cancer risk models using real gene expression data. It challenges students to grapple with the inherent messiness of biomedical data while introducing best practices like data transformation, variable selection with limma, and modeling for ordinal outcomes.
+
+By simulating the full data science workflow in an educational setting, Preva empowers students to engage deeply with the iterative and interpretive aspects of biomedical modeling. Designed for senior undergraduates and early Honours students in biomedical or data science programs, Preva equips learners with the foundational skills and confidence they need to bridge the gap between theory and practice, and to make meaningful contributions to data-driven healthcare.
+
+# Methods
+
+## Obtaining data
+
+Data was sourced using two primary methods: directly from the NCBI GEO database and through targeted searches using Google and Google Scholar. On the NCBI website, we explored the GEO Datasets portal using the keywords “breast cancer,” filtered by study type “Expression profiling by array” and organism “Homo sapiens.” Additionally, we performed broader web searches using terms such as “breast cancer dataset” to discover relevant studies hosted on GEO. This approach led us to three datasets: GSE15852, which was identified through the NCBI search, and GSE17907 and GSE10810, both of which were found via Google. The latter two were later merged to form a combined dataset.
+
+## EDA
+
+After loading the data we explored the phenotype and expression data. We determined which columns represented the cancer grade, the distribution of grades in each dataset and whether there were NA values. Principal Component Analysis (PCA) was used to introduce students to unsupervised exploratory analysis and visualisation.
+
+[In the pipeline, PCA was applied to:]{.underline}
+
+-   Detect and visualise sample clusters by grade or dataset
+
+-   Identify batch effects and the need for log transformation (e.g., GSE15852
+
+Plots from the PCA and other portions of EDA feature in Preva to assist the learning process.
+
+## Data Processing
+
+We selected GSE15852, GSE17907, and a merged dataset (GSE17907 & GSE10810) for use in Preva. GSE10810 was excluded as a standalone dataset due to its low number of Grade 1 samples, which limited predictive performance and added little value.
+
+Each selected dataset was imported using the GEOquery package, and the phenotype data was cleaned and standardized—particularly the grade labels—to ensure consistency, especially for merging datasets. Cleaned phenotype and gene expression data were then extracted. From the phenotype data, only sample name, grade, and source dataset were retained to form a simplified “metadata” file, while the expression data was compiled into a “merged_expr” dataset.
+
+We removed samples without grade labels, as they offered no predictive value, and genes with NA values, due to incomplete expression profiles. Lowly expressed genes were filtered out to reduce noise, improve statistical power, and retain biological relevance.
+
+Processing varied slightly across datasets. For GSE15852, a log(x + 1) transformation was applied after PCA analysis showed the data was not already log-transformed, unlike GSE17907 and GSE10810. For the combined dataset, batch correction was performed to account for technical variation introduced by merging studies, helping isolate true biological signals.
+
+All datasets were then split into 80% training and 20% testing sets. The testing sets were kept separate for final validation, while training sets were used for model development. SMOTE re-sampling was applied only to the combined dataset to synthetically increase the number of Grade 1 samples and balance the class distribution. It was not used on GSE15852 or GSE17907 alone, as their small Grade 1 sample sizes could lead to unreliable synthetic data or over-fitting.
+
+These dataset-specific pre-processing steps ensured that each input was appropriately cleaned, balanced, and ready for robust modeling within Preva.
+
+```{r fig-dataflow, out.width="80%",fig.cap="Data Processing Workflow"}
+knitr::include_graphics("figure2.png")
+```
+
+### Feature Selection
+
+To introduce students to real-world feature selection, we used the `limma` package to perform differential expression analysis, retaining genes with an adjusted p-value \< 0.05. From these, we created input sets of the top 30, 50, 80, and 110 genes for model training. This allows students to observe how feature count impacts model performance and prompts discussion on biological relevance.
+
+## Modelling/Analysis Approach
+
+After performing feature selection, we evaluated each top gene using three different machine learning algorithms, resulting in twelve distinct model outcomes. For each model, we calculated key performance metrics including `accuracy`, `balanced accuracy`, `recall`, `precision`, `F1 score`, `sensitivity`, and `specificity`. These metrics were then visualized and compared, with the resulting plots integrated into the Shiny app for interactive exploration. The models used were:
+
+### Random Forest (RF)
+
+RF is an ensemble method that builds multiple decision trees on random data and feature subsets, combining their outputs via majority voting. It handles high-dimensional gene expression data well and is robust to noise and over-fitting; key for Preva's small datasets.
+
+### Support Vector Machine (SVM)
+
+SVM finds the optimal hyperplane to separate classes in high-dimensional space. Using kernel tricks like the RBF kernel, it’s able to handle the non-linear relationships common in biological data and performs well with high-dimensional data.
+
+### K-Nearest Neighbours (KNN)
+
+KNN is a simple, non-parametric algorithm that classifies based on the majority class among the k closest data points (using Euclidean distance). Its simplicity and interpretability make it ideal for teaching foundational ML concepts and benchmarking performance.
+
+## Shiny App
+
+The Shiny app provides an interactive, browser-based learning experience that makes complex predictive genomics concepts accessible without coding. It is structured into four modules: Module 1 introduces breast cancer and gene expression data; Module 2 covers data processing; Module 3 focuses on model building; and Module 4 guides students through model evaluation. Each module includes clear explanations and a quiz to reinforce key data science concepts related to predictive modeling.
+
+### Educational Foundations of Preva
+
+**Learner-Centered Design**
+
+-   Preva features intuitive interfaces, scaffolded tutorials, and low-pressure environments to support beginners, improving engagement and understanding (eLearning Industry, 2024).
+
+**Clear Learning Alignment**
+
+-   Each module links to assessable learning outcomes, helping students understand the purpose behind each task and boosting knowledge retention (Instructure, n.d.; University of Hawaii, n.d.).
+
+**Interactive, Hands-On Learning**
+
+-   By using real breast cancer gene expression data, customizable models, and visualizations, Preva promotes active learning and engagement (BMC Medical Education, 2024).
+
+**Best-Practice Pedagogy**
+
+-   Preva integrates problem-based learning, reflection, and data storytelling to foster critical thinking and interdisciplinary literacy (ScienceDirect, 2024).
+
+# Result
+
+## Key Findings
+
+In this study, we systematically evaluated the predictive performance of three machine learning models (SVM, KNN, and RF) on breast cancer grade classification across three datasets (Combined, GSE15852, and GSE17907) and four top-ranked gene sets (30, 50, 80, and 110 genes). The boxplots provide a clear visual comparison of the distribution of Balanced Accuracy and Macro F1 scores for each model across the different datasets.
+
+From the boxplots, it is evident that the Combined dataset consistently outperformed the two individual datasets (GSE15852 and GSE17907) in terms of both Balanced Accuracy and Macro F1. The higher median values of the Combined dataset highlight its overall superior performance.
+
+Focusing on the Combined dataset, the RF model demonstrated the most robust performance across different top gene sets. Notably, when using the top 80 genes, the RF model achieved a Balanced Accuracy of 0.673 and a Macro F1 score of 0.642, showcasing its strong predictive ability for breast cancer grade classification. The SVM and KNN models also exhibited stable performance on the Combined dataset, with Balanced Accuracy values generally exceeding 0.6 across most top-ranked gene sets, indicating good generalization capabilities.
+
+Overall, the Combined dataset provided richer and more comprehensive biological signals, enabling all models—especially the RF classifier—to better differentiate between breast cancer grades.
+
+```{r load-boxplot, fig.width=6, fig.height=3.5, fig.cap="Figure 3: Boxplot comparing Balanced Accuracy and Macro F1\\ across models and datasets"}
+load("report_plot.RData")
+
+boxplot_plot
+```
+
+```{r out.width="100%",fig.cap="Figure 4: Preva's risk calculator component"}
+knitr::include_graphics("figure4.png")
+```
+
+```{r load-boxplot, fig.width=6, fig.height=3.5, fig.cap="Figure 5: Heatmap of the top genes from the combined dataset and their relevance to each cancer grade."}
+
+
+gene_heat_drawn
+```
+
+## Interpretation
+
+The results show clear patterns that make sense in a biomedical and data science context. Most notably, the combined dataset consistently performed better across all models. This reflects how integrating datasets can help reduce study-specific bias and make predictions more generalisable—something students can directly observe using Preva.
+
+While RF achieved the best overall scores, it’s not about choosing one “winner.” One important learning point is that different models behave differently across datasets and feature sets. In some cases, SVM actually outperformed RF on GSE15852. KNN struggled with larger gene sets, likely due to its sensitivity to noisy or irrelevant features. These outcomes reflect common challenges in high-dimensional data analysis.
+
+Preva is designed to help students explore these trade-offs for themselves. In Module 4, users can change parameters—like gene set size or model type—and immediately see how performance metrics shift. This interactivity turns abstract ideas into practical knowledge. Instead of just reading that more genes can improve performance “up to a point,” students can test that directly and notice how the gains flatten beyond a certain number of features.
+
+Another key concept Preva helps communicate is the importance of using the right metrics. Accuracy, while intuitive, can be misleading when data is imbalanced. Balanced Accuracy, Macro-F1, and Specificity provide a clearer picture; especially when working with rare but clinically important cases like Grade 1 or Grade 3 tumors. The app doesn't just display these values; it explains them, so students can learn why each one matters.
+
+Beyond the numbers, Preva also guides students through the full modeling process, from biological context to technical evaluation. The modular layout helps scaffold their learning—Module 1 introduces breast cancer and gene expression, Module 2 handles preprocessing, and so on. Each stage builds on the last, supported by text explanations, quizzes, and visual feedback.
+
+From an EdTech design perspective of the Shiny, Preva integrates multiple best practices. The app is interactive, modular, and explanatory, aligning with guidelines for effective digital learning tools (Backpack Interactive, n.d.; BMC Medical Education, 2024). Instructional design literature stresses the importance of learner agency and feedback, both of which Preva offers through parameter tuning and real-time metric updates (Instructure, n.d.; eLearning Industry, n.d.). Moreover, Preva’s integration of biomedical context ensures the learning remains applied and relevant, a strategy shown to deepen engagement and improve knowledge retention (ScienceDirect, 2021; University of Hawaii, n.d.).
+
+Ultimately, Preva achieves its educational goal: to teach students how to build, evaluate, and interpret predictive models in a high-dimensional biomedical context. By combining domain knowledge, data science, and instructional design, it offers a cohesive learning experience that promotes exploration, critical thinking, and real-world applicability.
+
+# Discussion and Conclusion
+
+This project set out to create an interactive educational tool to guide students through the process of building a breast cancer risk classifier using gene expression data. Our findings demonstrate that, while the models developed are moderately robust and primarily tailored to the datasets used, they offer meaningful insights within an educational context. Their performance was consistent across three separate datasets, various train/test splits, and unseen data, suggesting reasonable generalisability. For an application intended to teach foundational concepts, achieving over 50% accuracy in a multi-class setting is contextually acceptable.
+
+Several limitations, however, constrain the reliability and interpretability of the current models. First, the datasets exhibit class imbalance and uneven sample sizes. While SMOTE was applied to oversample minority classes, synthetic data cannot fully replicate the complexity of real biological samples. Second, the feature selection relied solely on the `limma` method, which is based on linear modelling assumptions. Given that gene–grade relationships may be nonlinear, this could limit the biological accuracy of selected features. Lastly, while models such as SVM, KNN, and Random Forest performed well in classification tasks, they lack transparency in terms of how individual genes contribute to predictions, which reduces interpretability for learners aiming to understand underlying biological mechanisms.\
+
+[To further improve Preva, both technically and educationally, we propose the following enhancements:]{.underline}
+
+-   Train models on larger and more diverse datasets, particularly those with matched normal controls, to improve generalisability and biological relevance.
+
+-   Enable user-adjustable model parameters (e.g., k in KNN, number of trees in RF) to promote hands-on experimentation and deeper learning.
+
+-   Support datasets from other cancer types in the same format, allowing broader application of Preva across various genomic contexts.
+
+In summary, Preva is an effective and accessible educational tool that lowers the barrier to understanding genomics and predictive modelling in disease contexts. It introduces honours-level biomedical students to the role of gene expression in breast cancer classification, bridging the gap between theory and application. With its flexibility, intuitive interface, and potential for expansion, Preva offers a valuable platform for teaching the practical and conceptual foundations of genomic data science.
+
+# Student Contributions
+
+**Devanshi**
+
+Coordinated and led weekly meetings, set up GitHub, Google Docs, and communication channels, and maintained meeting minutes. Sourced GSE15852, contributed to EDA and early model building, and shaped the report and presentation structure. Wrote the Executive Summary, Background, part of the Method, and designed Figure 1.
+
+**Hamish**
+
+Developed a quick, simple, shiny app (Not the extensive Shiny app submitted), created quiz Questions, wrote “About” page content, wrote module 1 content, contributed to LO7: Communicating Findings content. “Limitations” and “Future directions”. Also wrote discussion and conclusion in the report.
+
+**Tommi**
+
+Sourced GSE17907 and GSE10810, creating a merged dataset from these two performing batch correction and resampling. Contributed the EDA, model building, created visualisations for data processing and final metric summary. I also wrote the methods section of the report and created figures 2 and 5.
+
+**Harry**
+
+Responsible for EDA, data pre-processing, model building, and visualisations. Later, assisted Dorothea in upgrading shiny, which included the analysis of the model and the data processing part. Wrote part A of the result section in the report, as well as the data introduction, limitations and data processing in shiny.
+
+**Dorothea**
+
+I designed and implemented the Shiny app’s UI, logo, selectors, styling, and all instructional content across tabs. I developed key modules including Gene Analysis, Performance, and Key Findings Summary, created the Quarto report template to match the app’s theme, wrote Results Part B, and briefly explored XGBoost during early modelling.
+
+# References
+
+Australian Institute of Health and Welfare. (2024). Cancer data in Australia. Retrieved from\
+<https://www.aihw.gov.au/reports/cancer/cancer-data-in-australia/contents/overview>
+
+Backpack Interactive. (n.d.). Interactive educational technology for better learning outcomes.\
+<https://backpackinteractive.com/insights/interactive-educational-technology>
+
+BMC Medical Education. (2024). Digital learning of clinical skills and its impact on medical students. <https://bmcmededuc.biomedcentral.com/articles/10.1186/s12909-024-06471-2>
+
+Breast Cancer Network Australia. (2024). Breast statistics cancer in Australia. Retrieved from\
+<https://www.bcna.org.au/resources/about-breast-cancer/breast-statistics-cancer-in-australia/>
+
+eLearning Industry. (n.d.). Elevating education through instructional design: Principles and key components.\
+<https://elearningindustry.com/elevating-education-through-instructional-design-principles-and-key-components>
+
+ERIC. (2024). Research-based and user-centered development of EdTech tools.\
+<https://files.eric.ed.gov/fulltext/ED649967.pdf>
+
+Instructure. (n.d.). Key principles of instructional design: How to craft effective learning experiences.\
+<https://www.instructure.com/resources/blog/key-principles-instructional-design-how-craft-effective-learning-experiences>
+
+Medshun. (n.d.). The importance of early detection: Key to successful breast cancer treatment. Retrieved from <https://medshun.com/article/finding-breast-cancer-early-is-the-key-to-successful-treatment>
+
+National Breast Cancer Foundation. (2024). Breast cancer statistics in Australia. Retrieved from\
+<https://nbcf.org.au/about-breast-cancer/breast-cancer-stats/>
+
+ScienceDirect. (2021). The use of educational technology for interactive teaching in lectures. <https://www.sciencedirect.com/science/article/pii/S2049080121000522>
+
+ScienceDirect. (2024). Learning to teach: Aligning pedagogy and technology in a learning design tool.\
+<https://www.sciencedirect.com/science/article/pii/S0742051X24002257>
+
+University of Hawaii. (n.d.). The design of effective ICT-supported learning activities: Exemplary models, changing requirements, and new possibilities.\
+<https://scholarspace.manoa.hawaii.edu/bitstream/10125/44115/1/1269.pdf>
+
+UpGuage. (n.d.). Best practices for educational institutions using EdTech.\
+<https://www.upguage.com/edtech_best_practices>
+
+# Appendix
+
+# Appendix A: Code for data processing, model building and evaluation with visualisations for all 3 datasets.
+
+```{r include=FALSE}
+# necessary libraries
+library(GEOquery) 
+library(R.utils)
+library(reshape2)
+library(ggplot2)
+library(limma)
+library(dplyr)
+library(Biobase)
+library(dplyr)
+library(caret)
+library(e1071) 
+library(randomForest)
+library(edgeR)
+library(sva)
+library(ggplot2)
+library(ggfortify)
+library(RColorBrewer)
+library(patchwork)
+library(ggplot2)
+library(dplyr)
+library(ggalluvial)
+library(ggplot2)
+library(cowplot)
+```
+
+```{r include=FALSE}
+# get gse files from online
+gse <- getGEO("GSE10810")
+gse10810 <- gse[[1]]
+
+gse <- getGEO("GSE17907")
+gse17907 <- gse[[1]]
+
+gse <- getGEO("GSE15852")
+gse15852  <- gse[[1]]
+```
+
+## combined code
+
+```{r}
+# Function to extract and standardize grade into correct names
+standardize_grade <- function(grades, pattern, replacements, remove_na = TRUE) {
+  grades <- tolower(grades)
+  for (i in seq_along(pattern)) {
+    grades <- gsub(pattern[i], replacements[i], grades)
+  }
+  grades <- gsub(".*(\\b[0-3]\\b).*", "\\1", grades)  # Extract grade number if embedded
+  grades[!grades %in% c("0", "1", "2", "3")] <- NA     # Drop anything unexpected
+  if (remove_na) {
+    grades <- as.numeric(grades)
+  }
+  
+  # Map grades to full names
+  grade_names <- c("0" = "Normal", "1" = "Grade1", "2" = "Grade2", "3" = "Grade3")
+  grades <- grade_names[as.character(grades)]  # Map numbers to grade names
+  
+  return(grades)
+}
+
+### GSE10810
+pdata10810 <- pData(gse10810)
+grades10810 <- pdata10810$characteristics_ch1.3
+# Patterns to handle: "grade: 0", "grade: i", "grade: ii", "grade: iii"
+pdata10810$grade <- standardize_grade(
+  grades10810,
+  c("grade: 0", "grade: i\\b", "grade: ii\\b", "grade: iii\\b"),
+  c("0", "1", "2", "3")
+)
+pdata10810 <- pdata10810[!is.na(pdata10810$grade), ]
+
+### GSE17907
+pdata17907 <- pData(gse17907)
+grades17907 <- pdata17907$`grade sbr:ch1`
+pdata17907$grade <- standardize_grade(
+  grades17907,
+  c("--"),
+  c("0")
+)
+pdata17907 <- pdata17907[!is.na(pdata17907$grade), ]
+
+### GSE15852
+pdata15852 <- pData(gse15852)
+grades15852 <- pdata15852$`characteristics_ch1.2`
+pdata15852$grade <- standardize_grade(
+  grades15852,
+  c("grade: normal", "grade: grade 1", "grade: grade 2", "grade: grade 3"),
+  c("0", "1", "2", "3")
+)
+pdata15852 <- pdata15852[!is.na(pdata15852$grade), ]
+
+```
+
+```{r}
+# visualising original mapping and then remapping
+build_mapping_df <- function(original_labels, dataset_name, pattern, replacements) {
+  cleaned <- standardize_grade(original_labels, pattern, replacements, remove_na = FALSE)
+  data.frame(
+    Original = original_labels,
+    Cleaned = cleaned,
+    Dataset = dataset_name,
+    stringsAsFactors = FALSE
+  )
+}
+
+map_10810 <- build_mapping_df(
+  grades10810, "GSE10810",
+  c("grade: 0", "grade: i\\b", "grade: ii\\b", "grade: iii\\b"),
+  c("0", "1", "2", "3")
+)
+
+map_17907 <- build_mapping_df(
+  grades17907, "GSE17907",
+  c("--"),
+  c("0")
+)
+
+
+# Combine
+all_maps <- bind_rows(map_10810, map_17907) %>%
+  filter(!is.na(Cleaned))
+
+# Plot
+og_dist_plot <- ggplot(all_maps, aes(x = Original, fill = Cleaned)) +
+  geom_bar() +
+  facet_wrap(~ Dataset, scales = "free_x") +
+  scale_fill_manual(values = c(
+    "Normal" = "#F8766D", "Grade1" = "#B79F00", "Grade2" = "#00BA38", "Grade3" = "#619CFF"
+  )) +
+  labs(title = "Mapping of Original Grade Labels to Standardized Names",
+       x = "Original Label", y = "Frequency", fill = "Standardized Grade") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+
+
+all_maps_long <- all_maps %>% count(Original, Cleaned) %>% filter(!is.na(Cleaned))
+
+stand_vis <- ggplot(all_maps_long,
+       aes(axis1 = Original, axis2 = Cleaned, y = n)) +
+  geom_alluvium(aes(fill = Cleaned), width = 1/12) +
+  geom_stratum(width = 1/12, fill = "grey80", color = "black") +
+  geom_label(stat = "stratum", aes(label = after_stat(stratum))) +
+  scale_fill_manual(values = c(
+    "Normal" = "#F8766D", "Grade1" = "#B79F00", "Grade2" = "#00BA38", "Grade3" = "#619CFF"
+  )) +
+  labs(title = "Standardizing Grade Labels Across Datasets",
+       x = "Standardization Step", y = "Sample Count") +
+  theme_minimal()
+stand_vis
+og_dist_plot
+```
+
+```{r}
+#check if data contains all 4 classes
+pdata_list <- list(
+  GSE10810 = pdata10810,
+  GSE17907 = pdata17907
+)
+
+required_grades <- c("Normal", "Grade1", "Grade2", "Grade3")
+
+qualified_datasets <- names(Filter(function(pdata) {
+  all(required_grades %in% pdata$grade)
+}, pdata_list))
+
+cat("Datasets containing all four grades:", paste(qualified_datasets, collapse = ", "), "\n")
+
+```
+
+```{r}
+# Merges datasets 
+
+# 1. Expression sets
+expr_list <- list(
+
+  gse10810 = exprs(gse10810),
+  gse17907 = exprs(gse17907)
+)
+
+# 2. Phenotype sets
+pdata_list <- list(
+  pdata10810,
+  pdata17907
+)
+
+# 3. Fix phenotype rownames using geo_accession if present
+pdata_list <- lapply(pdata_list, function(p) {
+  if ("geo_accession" %in% colnames(p)) {
+    rownames(p) <- p$geo_accession
+  }
+  return(p)
+})
+
+# Reassign corrected pdata
+
+# 1. Assign pdata
+pdata10810 <- pdata_list[[1]]
+pdata17907 <- pdata_list[[2]]
+
+# 2. Create pheno_list with dataset names
+pheno_list <- list(
+  gse10810 = pdata10810,
+  gse17907 = pdata17907
+)
+
+# 3. Extract grade list and track batch
+grade_list <- Map(function(expr, pheno, batch_name) {
+  sample_names <- colnames(expr)
+  matched_pheno <- pheno[sample_names, , drop = FALSE]
+  grades <- matched_pheno$grade
+  names(grades) <- sample_names
+  # Track batch
+  data.frame(
+    sample = sample_names,
+    grade = grades,
+    batch = batch_name,
+    stringsAsFactors = FALSE
+  )
+}, expr_list, pheno_list, names(pheno_list))
+
+# 4. Combine all grade + batch info into metadata
+metadata <- do.call(rbind, grade_list)
+
+# 5. Clean sample names to remove prefixes (e.g., "gse10810.")
+metadata$sample <- sub(".*\\.", "", metadata$sample)
+
+# 6. Combine expression matrices
+expr_dfs <- lapply(expr_list, function(mat) {
+  df <- as.data.frame(mat)
+  df$gene <- rownames(mat)
+  df
+})
+
+merged_expr <- Reduce(function(x, y) full_join(x, y, by = "gene"), expr_dfs)
+rownames(merged_expr) <- merged_expr$gene
+merged_expr$gene <- NULL
+
+# 7. Ensure metadata matches expression matrix columns
+colnames(merged_expr) <- sub(".*\\.", "", colnames(merged_expr))  # Match cleaned sample names
+metadata <- metadata[match(colnames(merged_expr), metadata$sample), ]
+
+# 8. Final check
+stopifnot(all(metadata$sample == colnames(merged_expr)))
+
+# ✅ Outputs
+metadata
+
+dim(merged_expr)
+```
+
+```{r}
+# visualisations of plots before/after NA removal
+# 1. Original plot: Sample counts by batch and grade
+plot_by_batch <- ggplot(metadata, aes(x = batch, fill = grade)) +
+  geom_bar(position = "dodge") +
+  labs(title = "Sample Counts by Dataset (Batch) and Grade",
+       x = "Dataset (Batch)", y = "Number of Samples", fill = "Grade") +
+  theme_minimal() +
+  scale_fill_manual(values = c(
+    "Normal" = "#F8766D", "Grade1" = "#B79F00", "Grade2" = "#00BA38", "Grade3" = "#619CFF"
+  ))
+
+# 2. Combined dataset grade distribution plot (ignoring batches)
+plot_combined <- ggplot(metadata, aes(x = grade, fill = grade)) +
+  geom_bar() +
+  labs(title = "Combined Dataset Grade Distribution",
+       x = "Grade", y = "Number of Samples", fill = "Grade") +
+  theme_minimal() +
+  scale_fill_manual(values = c(
+    "Normal" = "#F8766D", "Grade1" = "#B79F00", "Grade2" = "#00BA38", "Grade3" = "#619CFF"
+  ))
+
+plot_by_batch
+plot_combined
+
+```
+
+```{r}
+# Filtering by median expression 
+
+filter_low_expression <- function(expr_data, median_threshold = 5, sd_threshold = 0.5, filter_median = TRUE, filter_sd = TRUE) {
+  
+  # If input is ExpressionSet, extract expression matrix
+  if (class(expr_data)[1] == "ExpressionSet") {
+    exprs_mat <- exprs(expr_data)
+  } else if (is.matrix(expr_data) || is.data.frame(expr_data)) {
+    exprs_mat <- as.matrix(expr_data)
+  } else {
+    stop("expr_data must be an ExpressionSet or a matrix/data.frame")
+  }
+  
+  keep_median <- rep(TRUE, nrow(exprs_mat))
+  keep_sd <- rep(TRUE, nrow(exprs_mat))
+  
+  if (filter_median) {
+    keep_median <- apply(exprs_mat, 1, median) > median_threshold
+  }or y
+  if (filter_sd) {
+    keep_sd <- apply(exprs_mat, 1, sd) > sd_threshold
+  }
+  
+  keep <- keep_median & keep_sd
+  
+  # Filter the expression matrix or ExpressionSet accordingly
+  if (class(expr_data)[1] == "ExpressionSet") {
+    filtered <- expr_data[keep, ]
+  } else {
+    filtered <- exprs_mat[keep, , drop = FALSE]
+  }
+  
+  return(filtered)
+}
+
+```
+
+```{r}
+# Visualisation of filteration process
+
+# Compute statistics before filtering
+gene_medians_before <- apply(merged_expr, 1, median)
+gene_sds_before <- apply(merged_expr, 1, sd)
+
+# Apply filter
+filtered_expr <- filter_low_expression(merged_expr, median_threshold = 5, sd_threshold = 0.5)
+
+# Compute statistics after filtering
+gene_medians_after <- apply(filtered_expr, 1, median)
+gene_sds_after <- apply(filtered_expr, 1, sd)
+
+# Create data frame for ggplot
+df_plot <- data.frame(
+  median = c(gene_medians_before, gene_medians_after),
+  sd = c(gene_sds_before, gene_sds_after),
+  status = rep(c("Before Filtering", "After Filtering"),
+               c(length(gene_medians_before), length(gene_medians_after)))
+)
+
+# Density plots
+p1 <- ggplot(df_plot, aes(x = median, fill = status)) +
+  geom_density(alpha = 0.5) +
+  labs(title = "Gene Median Expression", x = "Median Expression", y = "Density") +
+  theme_minimal()
+
+p2 <- ggplot(df_plot, aes(x = sd, fill = status)) +
+  geom_density(alpha = 0.5) +
+  labs(title = "Gene Expression SD", x = "Standard Deviation", y = "Density") +
+  theme_minimal()
+
+# Display the plots
+filter_plot <- p1 + p2
+filter_plot
+```
+
+```{r}
+# filternig lowly expressed genes
+
+merged_expr <- filter_low_expression(merged_expr, median_threshold = 5, sd_threshold = 0.5)
+dim(merged_expr)
+```
+
+```{r}
+
+before_genes <- nrow(merged_expr) + sum(!complete.cases(merged_expr))
+
+# Number of genes after filtering
+after_genes <- nrow(merged_expr)
+metadata <- metadata[!is.na(metadata$grade), ]
+metadata
+# 🧼 Remove corresponding columns from merged_expr
+merged_expr <- merged_expr[, metadata$sample]
+anyNA(merged_expr)
+sum(is.na(merged_expr))
+merged_expr <- merged_expr[complete.cases(merged_expr), ]
+merged_expr
+
+table(metadata$grade)
+
+# Number of genes before filtering
+na_removal_grad_dist <- ggplot(metadata, aes(x = grade, fill = grade)) +
+  geom_bar() +
+  labs(title = "Combined Dataset Grade Distribution",
+       x = "Grade", y = "Number of Samples", fill = "Grade") +
+  theme_minimal() +
+  scale_fill_manual(values = c(
+    "Normal" = "#F8766D", "Grade1" = "#B79F00", "Grade2" = "#00BA38", "Grade3" = "#619CFF"
+  ))
+
+
+gene_counts <- data.frame(
+  Status = c("Before Removing NA Genes", "After Removing NA Genes"),
+  Count = c(before_genes, after_genes)
+)
+
+gene_na_removal <- ggplot(gene_counts, aes(x = Status, y = Count, fill = Status)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Gene Counts Before and After Removing Genes with Missing Values",
+       y = "Number of Genes", x = "") +
+  theme_minimal() +
+  scale_fill_manual(values = c("Before Removing NA Genes" = "#619CFF", "After Removing NA Genes" = "#00BA38")) +
+  geom_text(aes(label = Count), vjust = -0.5)
+
+
+
+```
+
+```{r}
+library(sva)
+
+# ========== 1. Input data ==========
+# merged_expr_filtered: The merged expression matrix (row = gene, column = sample)
+# metadata: A data frame containing sample, batch, and grade
+
+# ========== 2. Prepare batch and grade information ==========
+batch_all <- metadata$batch
+grade_all <- factor(metadata$grade)
+mod_all <- model.matrix(~ grade_all)
+
+# ========== 3. Remove genes with variance of 0 ==========
+remove_zero_var_genes <- function(expr, batch) {
+  keep <- apply(expr, 1, function(gene) {
+    all(tapply(gene, batch, function(x) var(x) > 0))
+  })
+  expr[keep, ]
+}
+
+expr_clean <- remove_zero_var_genes(merged_expr, batch_all)
+
+# ========== 4. Batch effect correction ==========
+expr_corrected <- ComBat(dat = expr_clean, batch = batch_all, mod = mod_all)
+library(ggplot2)
+library(ggfortify)
+library(RColorBrewer)
+library(patchwork)
+
+# Define a pastel pink color palette (or create your own)
+pastel_pinks <- c("#FBB1BD", "#FDC8D1", "#FDDDE5", "#FFE5ED", "#F8AFA6", "#E8C7CD")
+
+# Perform PCA
+pca_before <- prcomp(t(expr_clean), scale. = TRUE)
+pca_after  <- prcomp(t(expr_corrected), scale. = TRUE)
+
+# Extract PCA data
+pca_df_before <- data.frame(pca_before$x[, 1:2], metadata)
+pca_df_after  <- data.frame(pca_after$x[, 1:2], metadata)
+
+# Define a custom pink/purple palette
+batch_levels <- unique(metadata$batch)
+color_palette <- c("#E8C7Cd", "#FBB1BD", "#E786D7", "#B07AA1", "#D36EAF", "#C77CFF")
+colors <- setNames(color_palette[seq_along(batch_levels)], batch_levels)
+
+# Base plot function
+plot_pca <- function(df, title) {
+  ggplot(df, aes(x = PC1, y = PC2, color = batch)) +
+    geom_point(size = 1.5) +
+    stat_ellipse(type = "norm", geom = "path", linewidth = 1) +  # Only border, no fill
+    scale_color_manual(values = colors) +
+    labs(title = title, color = "Batch") +
+    theme_minimal() +
+    theme(legend.position = "bottom")
+}
+
+# Generate plots
+p1 <- plot_pca(pca_df_before, "Before Batch Correction")
+p2 <- plot_pca(pca_df_after, "After Batch Correction")
+
+# Display side by side
+
+bat_pca <- p1 + p2
+bat_pca
+```
+
+```{r}
+RNGkind(kind = "L'Ecuyer-CMRG")
+set.seed(123)
+# ========== Train/Test Split ==========
+split_by_grade <- split(metadata, metadata$grade)
+
+train_samples <- unlist(lapply(split_by_grade, function(df) {
+  n <- nrow(df)
+  if (n >= 2) {
+    sample(df$sample, size = floor(0.8 * n))  
+  } else {
+    sample(df$sample, size = 1)  
+  }
+}))
+
+test_samples <- setdiff(metadata$sample, train_samples)
+
+expr_train <- expr_corrected[, train_samples]
+expr_test  <- expr_corrected[, test_samples]
+
+metadata_train <- metadata[match(train_samples, metadata$sample), ]
+metadata_test  <- metadata[match(test_samples, metadata$sample), ]
+
+metadata_train$grade <- factor(metadata_train$grade,
+                               levels = c("Normal", "Grade1", "Grade2", "Grade3"))
+metadata_test$grade <- factor(metadata_test$grade,
+                              levels = c("Normal", "Grade1", "Grade2", "Grade3"))
+
+levels(metadata_train$grade) <- make.names(levels(metadata_train$grade))
+levels(metadata_test$grade)  <- make.names(levels(metadata_test$grade))
+
+cat("Training set grade counts:\n")
+print(table(metadata_train$grade))
+cat("Test set grade counts:\n")
+print(table(metadata_test$grade))
+
+
+
+```
+
+```{r}
+library(smotefamily)
+
+# Transpose so samples are rows
+expr_t <- t(expr_train)
+expr_df <- as.data.frame(expr_t)
+expr_df$grade <- metadata_train$grade[match(rownames(expr_df), metadata_train$sample)]
+
+# Convert grade to factor
+expr_df$grade <- as.factor(expr_df$grade)
+
+# Apply SMOTE (over-sampling only)
+# dup_size controls how many synthetic samples to make per minority sample
+smote_result <- SMOTE(X = expr_df[, -ncol(expr_df)],
+                      target = expr_df$grade,
+                      K = 3,
+                      dup_size = 5)  # try 5–10
+
+# SMOTE returns a list with $data
+expr_smote <- smote_result$data
+
+# Extract new metadata and expression matrix
+metadata_train <- data.frame(
+  sample = paste0("SMOTE_", seq_len(nrow(expr_smote))),
+  grade = expr_smote$class
+)
+
+expr_balanced <- t(as.matrix(expr_smote[, -ncol(expr_smote)]))
+colnames(expr_balanced) <- metadata_train$sample
+
+metadata_train$grade <- factor(
+  expr_smote$class,
+  levels = c("Normal", "Grade1", "Grade2", "Grade3")
+)
+
+
+```
+
+```{r}
+library(ggplot2)
+library(ggplot2)
+library(uwot)
+
+grade_levels <- c("Normal", "Grade1", "Grade2", "Grade3")
+grade_palette <- c(
+  "Normal" = "#F8766D",  # bright coral pink
+  "Grade1" = "#B79F00",  # gold-brown
+  "Grade2" = "#00BA38",  # vivid green
+  "Grade3" = "#619CFF"   # sky blue
+)
+
+before <- data.frame(grade = expr_df$grade, source = "Original")
+after <- data.frame(grade = expr_smote$class, source = "SMOTE")
+combined <- rbind(before, after)
+
+# Ensure factor levels for consistent color ordering
+combined$grade <- factor(combined$grade, levels = grade_levels)
+
+smote_bar <- ggplot(combined, aes(x = grade, fill = source)) +
+  geom_bar(position = "dodge") +
+  scale_fill_manual(values = c("Original" = "#E8C7Cd", "SMOTE" = "#FBB1BD")) +
+  scale_x_discrete(drop = FALSE) +
+  labs(title = "Class Distribution Before and After SMOTE",
+       x = "Grade", y = "Count") +
+  theme_minimal()
+# Combine original and synthetic
+expr_combined <- rbind(expr_df[, -ncol(expr_df)], expr_smote[, -ncol(expr_smote)])
+labels <- c(rep("Original", nrow(expr_df)), rep("SMOTE", nrow(expr_smote)))
+grades <- c(as.character(expr_df$grade), as.character(expr_smote$class))
+
+# PCA
+pca <- prcomp(expr_combined, scale. = TRUE)
+pca_df <- data.frame(pca$x[, 1:2], Source = labels, Grade = grades)
+
+# Ensure consistent factor levels
+pca_df$Grade <- factor(pca_df$Grade, levels = grade_levels)
+
+smote_scatter <- ggplot(pca_df, aes(x = PC1, y = PC2, color = Grade, shape = Source)) +
+  geom_point(alpha = 0.7) +
+  scale_color_manual(values = grade_palette) +
+  labs(title = "PCA: Real vs SMOTE Samples", color = "Grade") +
+  theme_minimal()
+smote_bar
+smote_scatter
+
+```
+
+```{r}
+# Feature Selection on SMOTE-balanced Data
+labels_factor <- factor(metadata_train$grade, levels = c("Normal", "Grade1", "Grade2", "Grade3"))
+design <- model.matrix(~ 0 + labels_factor)
+colnames(design) <- levels(labels_factor)
+
+fit <- lmFit(expr_balanced, design)
+fit <- eBayes(fit)
+res <- topTable(fit, number = Inf, adjust.method = "BH")
+
+# Significant genes (adjusted p < 0.05)
+sig_genes <- rownames(subset(res, adj.P.Val < 0.05))
+
+# Group means and strong difference filtering (max - min > 1)
+group_means <- sapply(levels(labels_factor), function(lv) {
+  rowMeans(expr_balanced[, metadata_train$grade == lv, drop = FALSE])
+})
+expr_diff <- apply(group_means, 1, function(x) max(x) - min(x))
+sig_genes_strong <- sig_genes[expr_diff[sig_genes] > 1]
+
+# Sort by adjusted p-value
+res_sig_strong <- res[sig_genes_strong, ]
+res_sig_strong <- res_sig_strong[order(res_sig_strong$adj.P.Val), ]
+
+# Build top gene sets only if enough genes exist
+top_gene_sets <- list()
+if (nrow(res_sig_strong) >= 30)  top_gene_sets$top30  <- rownames(res_sig_strong)[1:30]
+if (nrow(res_sig_strong) >= 50)  top_gene_sets$top50  <- rownames(res_sig_strong)[1:50]
+if (nrow(res_sig_strong) >= 80)  top_gene_sets$top80  <- rownames(res_sig_strong)[1:80]
+if (nrow(res_sig_strong) >= 110) top_gene_sets$top110 <- rownames(res_sig_strong)[1:110]
+
+# Optional: show available gene set sizes
+cat("Available gene sets:\n")
+print(names(top_gene_sets))
+
+```
+
+```{r}
+# Load libraries
+library(ComplexHeatmap)
+library(circlize)
+library(hgu133plus2.db)  # For mapping probe IDs to gene symbols
+library(AnnotationDbi)
+
+# Subset expression data and scale by gene (Z-score)
+selected_genes <- top_gene_sets$top30
+expr_selected <- expr_balanced[selected_genes, ]
+expr_selected <- t(scale(t(expr_selected)))  # row-wise Z-score
+
+# Grade annotation: different shades of purple
+grade_colors <- c(
+  "Normal" = "#d8b5d8",
+  "Grade1" = "#b279b2",
+  "Grade2" = "#944f94",
+  "Grade3" = "#6a2e6a"
+)
+
+grade_annotation <- HeatmapAnnotation(
+  Grade = metadata_train$grade,
+  col = list(Grade = grade_colors),
+  annotation_name_side = "left"
+)
+
+# Row order by significance
+gene_order <- rownames(res_sig_strong)[rownames(res_sig_strong) %in% selected_genes]
+expr_selected <- expr_selected[gene_order, ]
+
+# Convert probe IDs to gene symbols
+gene_map <- AnnotationDbi::select(hgu133plus2.db,
+                                  keys = rownames(expr_selected),
+                                  columns = c("SYMBOL"),
+                                  keytype = "PROBEID")
+# Remove duplicates and map
+gene_map <- gene_map[!duplicated(gene_map$PROBEID), ]
+gene_symbols <- gene_map$SYMBOL[match(rownames(expr_selected), gene_map$PROBEID)]
+
+# Replace rownames (probes) with gene symbols
+rownames(expr_selected) <- ifelse(is.na(gene_symbols), rownames(expr_selected), gene_symbols)
+
+# Define pink color gradient for Z-scores
+z_col_fun <- colorRamp2(c(-2, 0, 2), c("#fbeffb", "#f7b6d2", "#c51b8a"))
+
+# Create heatmap
+gene_heat <- Heatmap(
+  expr_selected,
+  name = "Z-score",
+  col = z_col_fun,
+  bottom_annotation = grade_annotation,
+  cluster_columns = TRUE,
+  cluster_rows = TRUE,  # Cluster genes
+  show_row_names = TRUE,
+  show_column_names = FALSE,
+  row_names_gp = gpar(fontsize = 10),
+  column_title = "Samples",
+  row_title = "Top Genes (adj.P.Val)",
+  heatmap_legend_param = list(title = "Z-score")
+)
+
+gene_heat
+
+```
+
+```{r}
+library(caret)
+library(ggplot2)
+library(tidyr)
+
+expr_train <- expr_balanced
+set.seed(123)
+results <- list()
+cv_folds <- 5  
+
+# ----------------- Create reproducible seeds -----------------
+generate_seed_list <- function(num_resamples, max_tune_length) {
+  set.seed(123)
+  seed_list <- vector(mode = "list", length = num_resamples + 1)
+  for (i in 1:num_resamples) {
+    seed_list[[i]] <- sample.int(1e6, max_tune_length)
+  }
+  seed_list[[num_resamples + 1]] <- sample.int(1e6, 1)
+  return(seed_list)
+}
+
+svm_grid <- data.frame(C = 1)
+knn_grid <- expand.grid(k = 5:10)
+rf_grid <- expand.grid(mtry = floor(sqrt(ncol(expr_train))))
+max_tune_length <- max(nrow(svm_grid), nrow(knn_grid), nrow(rf_grid))
+seeds <- generate_seed_list(cv_folds, max_tune_length)
+
+# ----------------- Begin training loop -----------------
+y_train <- as.factor(metadata_train$grade)
+levels(y_train) <- make.names(levels(y_train))
+y_test <- make.names(metadata_test$grade)
+
+acc_list <- list()        
+summary_list <- list()     
+
+for (gene_set_name in names(top_gene_sets)) {
+  
+  gene_set <- top_gene_sets[[gene_set_name]]
+  x_train <- t(expr_train[gene_set, , drop = FALSE])
+  x_test  <- t(expr_test[gene_set, , drop = FALSE])
+  
+  trctrl <- trainControl(
+    method = "cv",
+    number = cv_folds,
+    classProbs = TRUE,
+    savePredictions = "final",
+    seeds = seeds
+  )
+  
+  # Model training
+  svm_mod <- train(x = x_train, y = y_train, method = "svmLinear", trControl = trctrl, tuneGrid = svm_grid)
+  knn_mod <- train(x = x_train, y = y_train, method = "knn", trControl = trctrl, tuneGrid = knn_grid)
+  rf_mod  <- train(x = x_train, y = y_train, method = "rf",  trControl = trctrl, tuneGrid = rf_grid, ntree = 100)
+  
+  # ---------- Save CV results ----------
+  acc_list[[length(acc_list) + 1]] <- data.frame(GeneSet = gene_set_name, Model = "SVM", Accuracy = svm_mod$resample$Accuracy)
+  acc_list[[length(acc_list) + 1]] <- data.frame(GeneSet = gene_set_name, Model = "KNN", Accuracy = knn_mod$resample$Accuracy)
+  acc_list[[length(acc_list) + 1]] <- data.frame(GeneSet = gene_set_name, Model = "RF",  Accuracy = rf_mod$resample$Accuracy)
+  
+  # ---------- Test set evaluation ----------
+  test_preds <- list(
+    SVM = predict(svm_mod, x_test),
+    KNN = predict(knn_mod, x_test),
+    RF  = predict(rf_mod,  x_test)
+  )
+  
+  for (model_name in names(test_preds)) {
+    pred <- factor(test_preds[[model_name]], levels = unique(y_test))
+    truth <- factor(y_test, levels = unique(y_test))
+    cm <- confusionMatrix(pred, truth)
+    
+    acc <- cm$overall["Accuracy"]
+    kappa <- cm$overall["Kappa"]
+    macro_f1 <- mean(cm$byClass[, "F1"], na.rm = TRUE)
+    macro_precision <- mean(cm$byClass[, "Precision"], na.rm = TRUE)
+    macro_recall <- mean(cm$byClass[, "Recall"], na.rm = TRUE)
+    bal_acc <- mean(cm$byClass[, "Balanced Accuracy"], na.rm = TRUE)
+    macro_sens <- mean(cm$byClass[, "Sensitivity"], na.rm = TRUE)
+    macro_spec <- mean(cm$byClass[, "Specificity"], na.rm = TRUE)
+    
+    summary_list[[length(summary_list) + 1]] <- data.frame(
+      GeneSet = gene_set_name,
+      Model = model_name,
+      Accuracy = round(acc, 4),
+      MacroF1 = round(macro_f1, 4),
+      MacroPrecision = round(macro_precision, 4),
+      MacroRecall = round(macro_recall, 4),
+      BalancedAccuracy = round(bal_acc, 4),
+      MacroSensitivity = round(macro_sens, 4),
+      MacroSpecificity = round(macro_spec, 4),
+      Kappa = round(kappa, 4)
+    )
+    
+    cat("\n======", gene_set_name, "-", model_name, "======\n")
+    print(cm$table)
+    cat("Test Accuracy:", round(acc, 3), 
+        "| Kappa:", round(kappa, 3), 
+        "| Macro F1:", round(macro_f1, 3), 
+        "| Precision:", round(macro_precision, 3), 
+        "| Recall:", round(macro_recall, 3),
+        "| Sensitivity:", round(macro_sens, 3),
+        "| Specificity:", round(macro_spec, 3),
+        "| Balanced Accuracy:", round(bal_acc, 3), "\n")
+  }
+}
+
+acc_df <- do.call(rbind, acc_list)
+summary_df <- do.call(rbind, summary_list)
+desired_order <- c("top30", "top50", "top80", "top110")
+acc_df$GeneSet <- factor(acc_df$GeneSet, levels = desired_order)
+summary_df$GeneSet <- factor(summary_df$GeneSet, levels = desired_order)
+
+# -------- Plot the CV accuracy boxplot --------
+combine_cv_plot <- ggplot(acc_df, aes(x = GeneSet, y = Accuracy, fill = Model)) +
+  geom_boxplot(position = position_dodge(0.8), outlier.shape = NA) +
+  geom_jitter(position = position_jitterdodge(jitter.width = 0.2, dodge.width = 0.8), size = 1, alpha = 0.6) +
+  labs(
+    title = "Model Accuracy (Linear selection)",
+    x = "Top Gene Set",
+    y = "Cross-validated Accuracy"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "top")
+
+# -------- Plot the Test evaluation metric bar chart --------
+eval_long_combined <- pivot_longer(summary_df, 
+                          cols = c("Accuracy", "MacroF1", "MacroPrecision", "MacroRecall", "MacroSensitivity", "MacroSpecificity", "BalancedAccuracy", "Kappa"),
+                          names_to = "Metric", values_to = "Value")
+
+combine_eval_plot <- ggplot(eval_long_combined , aes(x = GeneSet, y = Value, fill = Model)) +
+  geom_col(position = position_dodge(0.8)) +
+  facet_wrap(~ Metric, scales = "free_y") +
+  labs(
+    title = "Test Set Evaluation: Extended Metrics",
+    x = "Top Gene Set",
+    y = "Metric"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "top")
+
+combine_cv_plot
+combine_eval_plot
+```
+
+```{r}
+dim(y_train)
+dim(y_test)
+```
+
+### dataframe of result for combined
+
+```{r}
+combine_metrics <- tidyr::pivot_wider(
+  eval_long_combined,
+  names_from = Metric,
+  values_from = Value
+)
+combine_metrics
+
+# Add an identifier for easier plotting
+combine_metrics$Config <- paste(combine_metrics$Model, combine_metrics$GeneSet, sep = "_")
+
+# Select top 5 models by Balanced Accuracy
+top5 <- combine_metrics %>%
+  arrange(desc(BalancedAccuracy)) %>%
+  head(5)
+
+# Reshape to long format for ggplot
+top5_long <- melt(top5, id.vars = c("Model", "GeneSet", "Config"))
+
+# Plot heatmap
+combine_heat <- ggplot(top5_long, aes(x = variable, y = Config, fill = value)) +
+  geom_tile(color = "white") +
+  scale_fill_gradient(low = "white", high = "#d07095", name = "Metric Value") +
+  labs(title = "Performance Heatmap of Top 5 Models",
+       x = "Metric",
+       y = "Model (Config)") +
+  theme_minimal(base_size = 14) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+combine_heat
+```
+
+```{r}
+#Put the first five into the list
+pdata_list <- list(
+  GSE10810 = pdata10810,
+  GSE17907 = pdata17907
+)
+
+required_grades <- c("Normal", "Grade1", "Grade2", "Grade3")
+
+qualified_datasets <- names(Filter(function(pdata) {
+  all(required_grades %in% pdata$grade)
+}, pdata_list))
+
+cat("Datasets containing all four grades:", paste(qualified_datasets, collapse = ", "), "\n")
+
+```
+
+## gse17907 code
+
+```{r}
+
+# 1. Expression sets
+expr_list <- list(
+
+  gse17907 = exprs(gse17907)
+)
+
+# 2. Phenotype sets
+pdata_list <- list(
+  pdata17907
+)
+
+# 3. Fix phenotype rownames using geo_accession if present
+pdata_list <- lapply(pdata_list, function(p) {
+  if ("geo_accession" %in% colnames(p)) {
+    rownames(p) <- p$geo_accession
+  }
+  return(p)
+})
+
+# Reassign corrected pdata
+
+# 1. Assign pdata
+pdata17907 <- pdata_list[[1]]
+
+
+# 2. Create pheno_list with dataset names
+pheno_list <- list(
+  gse17907 = pdata17907
+)
+
+# 3. Extract grade list and track batch
+grade_list <- Map(function(expr, pheno, batch_name) {
+  sample_names <- colnames(expr)
+  matched_pheno <- pheno[sample_names, , drop = FALSE]
+  grades <- matched_pheno$grade
+  names(grades) <- sample_names
+  # Track batch
+  data.frame(
+    sample = sample_names,
+    grade = grades,
+    batch = batch_name,
+    stringsAsFactors = FALSE
+  )
+}, expr_list, pheno_list, names(pheno_list))
+
+# 4. Combine all grade + batch info into metadata
+metadata <- do.call(rbind, grade_list)
+
+# 5. Clean sample names to remove prefixes (e.g., "gse10810.")
+metadata$sample <- sub(".*\\.", "", metadata$sample)
+
+# 6. Combine expression matrices
+expr_dfs <- lapply(expr_list, function(mat) {
+  df <- as.data.frame(mat)
+  df$gene <- rownames(mat)
+  df
+})
+
+merged_expr <- Reduce(function(x, y) full_join(x, y, by = "gene"), expr_dfs)
+rownames(merged_expr) <- merged_expr$gene
+merged_expr$gene <- NULL
+
+# 7. Ensure metadata matches expression matrix columns
+colnames(merged_expr) <- sub(".*\\.", "", colnames(merged_expr))  # Match cleaned sample names
+metadata <- metadata[match(colnames(merged_expr), metadata$sample), ]
+
+# 8. Final check
+stopifnot(all(metadata$sample == colnames(merged_expr)))
+
+# ✅ Outputs
+metadata
+```
+
+```{r}
+filter_low_expression <- function(expr_data, median_threshold = 5, sd_threshold = 0.5, filter_median = TRUE, filter_sd = TRUE) {
+  # expr_data: expression matrix (genes x samples) or ExpressionSet object
+  # median_threshold: genes with median expression below this will be filtered out
+  # sd_threshold: genes with SD below this will be filtered out
+  # filter_median: whether to filter by median expression
+  # filter_sd: whether to filter by standard deviation (variance)
+  
+  # If input is ExpressionSet, extract expression matrix
+  if (class(expr_data)[1] == "ExpressionSet") {
+    exprs_mat <- exprs(expr_data)
+  } else if (is.matrix(expr_data) || is.data.frame(expr_data)) {
+    exprs_mat <- as.matrix(expr_data)
+  } else {
+    stop("expr_data must be an ExpressionSet or a matrix/data.frame")
+  }
+  
+  keep_median <- rep(TRUE, nrow(exprs_mat))
+  keep_sd <- rep(TRUE, nrow(exprs_mat))
+  
+  if (filter_median) {
+    keep_median <- apply(exprs_mat, 1, median) > median_threshold
+  }
+  if (filter_sd) {
+    keep_sd <- apply(exprs_mat, 1, sd) > sd_threshold
+  }
+  
+  keep <- keep_median & keep_sd
+  
+  # Filter the expression matrix or ExpressionSet accordingly
+  if (class(expr_data)[1] == "ExpressionSet") {
+    filtered <- expr_data[keep, ]
+  } else {
+    filtered <- exprs_mat[keep, , drop = FALSE]
+  }
+  
+  return(filtered)
+}
+
+```
+
+```{r}
+merged_expr <- filter_low_expression(merged_expr, median_threshold = 5, sd_threshold = 0.5)
+dim(merged_expr)
+```
+
+```{r}
+
+
+metadata <- metadata[!is.na(metadata$grade), ]
+metadata
+# 🧼 Remove corresponding columns from merged_expr
+gse10810 <- merged_expr[, metadata$sample]
+anyNA(merged_expr)
+sum(is.na(merged_expr))
+merged_expr <- merged_expr[complete.cases(merged_expr), ]
+merged_expr
+
+table(metadata$grade)
+```
+
+```{r}
+RNGkind(kind = "L'Ecuyer-CMRG")
+set.seed(123)
+split_by_grade <- split(metadata, metadata$grade)
+
+train_samples <- unlist(lapply(split_by_grade, function(df) {
+  n <- nrow(df)
+  if (n >= 2) {
+    sample(df$sample, size = floor(0.8 * n))  
+  } else {
+    sample(df$sample, size = 1)  
+  }
+}))
+
+test_samples <- setdiff(metadata$sample, train_samples)
+
+# ========== 6. Extract the expression matrix and metadata ==========
+expr_train <- merged_expr[, train_samples]
+expr_test  <- merged_expr[, test_samples]
+
+metadata_train <- metadata[match(train_samples, metadata$sample), ]
+metadata_test  <- metadata[match(test_samples, metadata$sample), ]
+
+metadata_train$grade <- factor(metadata_train$grade,
+                               levels = c("Normal", "Grade1", "Grade2", "Grade3"))
+metadata_test$grade <- factor(metadata_test$grade,
+                              levels = c("Normal", "Grade1", "Grade2", "Grade3"))
+
+levels(metadata_train$grade) <- make.names(levels(metadata_train$grade))
+levels(metadata_test$grade)  <- make.names(levels(metadata_test$grade))
+
+
+cat("Training set grade counts:\n")
+print(table(metadata_train$grade))
+cat("Test set grade counts:\n")
+print(table(metadata_test$grade))
+
+expr_balanced <- expr_train
+
+```
+
+```{r}
+# Feature Selection on SMOTE-balanced Data
+labels_factor <- factor(metadata_train$grade, levels = c("Normal", "Grade1", "Grade2", "Grade3"))
+design <- model.matrix(~ 0 + labels_factor)
+colnames(design) <- levels(labels_factor)
+
+fit <- lmFit(expr_balanced, design)
+fit <- eBayes(fit)
+res <- topTable(fit, number = Inf, adjust.method = "BH")
+
+# Significant genes (adjusted p < 0.05)
+sig_genes <- rownames(subset(res, adj.P.Val < 0.05))
+
+# Group means and strong difference filtering (max - min > 1)
+group_means <- sapply(levels(labels_factor), function(lv) {
+  rowMeans(expr_balanced[, metadata_train$grade == lv, drop = FALSE])
+})
+expr_diff <- apply(group_means, 1, function(x) max(x) - min(x))
+sig_genes_strong <- sig_genes[expr_diff[sig_genes] > 1]
+
+# Sort by adjusted p-value
+res_sig_strong <- res[sig_genes_strong, ]
+res_sig_strong <- res_sig_strong[order(res_sig_strong$adj.P.Val), ]
+
+# Build top gene sets only if enough genes exist
+top_gene_sets <- list()
+if (nrow(res_sig_strong) >= 30)  top_gene_sets$top30  <- rownames(res_sig_strong)[1:30]
+if (nrow(res_sig_strong) >= 50)  top_gene_sets$top50  <- rownames(res_sig_strong)[1:50]
+if (nrow(res_sig_strong) >= 80)  top_gene_sets$top80  <- rownames(res_sig_strong)[1:80]
+if (nrow(res_sig_strong) >= 110) top_gene_sets$top110 <- rownames(res_sig_strong)[1:110]
+
+# Optional: show available gene set sizes
+cat("Available gene sets:\n")
+print(names(top_gene_sets))
+
+```
+
+```{r}
+# Feature Selection on SMOTE-balanced Data
+labels_factor <- factor(metadata_train$grade, levels = c("Normal", "Grade1", "Grade2", "Grade3"))
+design <- model.matrix(~ 0 + labels_factor)
+colnames(design) <- levels(labels_factor)
+
+fit <- lmFit(expr_balanced, design)
+fit <- eBayes(fit)
+res <- topTable(fit, number = Inf, adjust.method = "BH")
+
+# Significant genes (adjusted p < 0.05)
+sig_genes <- rownames(subset(res, adj.P.Val < 0.05))
+
+# Group means and strong difference filtering (max - min > 1)
+group_means <- sapply(levels(labels_factor), function(lv) {
+  rowMeans(expr_balanced[, metadata_train$grade == lv, drop = FALSE])
+})
+expr_diff <- apply(group_means, 1, function(x) max(x) - min(x))
+sig_genes_strong <- sig_genes[expr_diff[sig_genes] > 1]
+
+# Sort by adjusted p-value
+res_sig_strong <- res[sig_genes_strong, ]
+res_sig_strong <- res_sig_strong[order(res_sig_strong$adj.P.Val), ]
+
+# Build top gene sets only if enough genes exist
+top_gene_sets <- list()
+if (nrow(res_sig_strong) >= 30)  top_gene_sets$top30  <- rownames(res_sig_strong)[1:30]
+if (nrow(res_sig_strong) >= 50)  top_gene_sets$top50  <- rownames(res_sig_strong)[1:50]
+if (nrow(res_sig_strong) >= 80)  top_gene_sets$top80  <- rownames(res_sig_strong)[1:80]
+if (nrow(res_sig_strong) >= 110) top_gene_sets$top110 <- rownames(res_sig_strong)[1:110]
+
+# Optional: show available gene set sizes
+cat("Available gene sets:\n")
+print(names(top_gene_sets))
+
+```
+
+```{r}
+library(caret)
+library(ggplot2)
+library(tidyr)
+
+set.seed(123)
+results <- list()
+cv_folds <- 5  
+
+# ----------------- Create reproducible seeds -----------------
+generate_seed_list <- function(num_resamples, max_tune_length) {
+  set.seed(123)
+  seed_list <- vector(mode = "list", length = num_resamples + 1)
+  for (i in 1:num_resamples) {
+    seed_list[[i]] <- sample.int(1e6, max_tune_length)
+  }
+  seed_list[[num_resamples + 1]] <- sample.int(1e6, 1)
+  return(seed_list)
+}
+
+svm_grid <- data.frame(C = 1)
+knn_grid <- expand.grid(k = 5:10)
+rf_grid <- expand.grid(mtry = floor(sqrt(ncol(expr_train))))
+max_tune_length <- max(nrow(svm_grid), nrow(knn_grid), nrow(rf_grid))
+seeds <- generate_seed_list(cv_folds, max_tune_length)
+
+# ----------------- Begin training loop -----------------
+y_train <- as.factor(metadata_train$grade)
+levels(y_train) <- make.names(levels(y_train))
+y_test <- make.names(metadata_test$grade)
+
+acc_list <- list()        
+summary_list <- list()     
+
+for (gene_set_name in names(top_gene_sets)) {
+  
+  gene_set <- top_gene_sets[[gene_set_name]]
+  x_train <- t(expr_train[gene_set, , drop = FALSE])
+  x_test  <- t(expr_test[gene_set, , drop = FALSE])
+  
+  trctrl <- trainControl(
+    method = "cv",
+    number = cv_folds,
+    classProbs = TRUE,
+    savePredictions = "final",
+    seeds = seeds
+  )
+  
+  # Model training
+  svm_mod <- train(x = x_train, y = y_train, method = "svmLinear", trControl = trctrl, tuneGrid = svm_grid)
+  knn_mod <- train(x = x_train, y = y_train, method = "knn", trControl = trctrl, tuneGrid = knn_grid)
+  rf_mod  <- train(x = x_train, y = y_train, method = "rf",  trControl = trctrl, tuneGrid = rf_grid, ntree = 100)
+  
+  # ---------- Save CV results ----------
+  acc_list[[length(acc_list) + 1]] <- data.frame(GeneSet = gene_set_name, Model = "SVM", Accuracy = svm_mod$resample$Accuracy)
+  acc_list[[length(acc_list) + 1]] <- data.frame(GeneSet = gene_set_name, Model = "KNN", Accuracy = knn_mod$resample$Accuracy)
+  acc_list[[length(acc_list) + 1]] <- data.frame(GeneSet = gene_set_name, Model = "RF",  Accuracy = rf_mod$resample$Accuracy)
+  
+  # ---------- Test set evaluation ----------
+  test_preds <- list(
+    SVM = predict(svm_mod, x_test),
+    KNN = predict(knn_mod, x_test),
+    RF  = predict(rf_mod,  x_test)
+  )
+  
+  for (model_name in names(test_preds)) {
+    pred <- factor(test_preds[[model_name]], levels = unique(y_test))
+    truth <- factor(y_test, levels = unique(y_test))
+    cm <- confusionMatrix(pred, truth)
+    
+    acc <- cm$overall["Accuracy"]
+    kappa <- cm$overall["Kappa"]
+    macro_f1 <- mean(cm$byClass[, "F1"], na.rm = TRUE)
+    macro_precision <- mean(cm$byClass[, "Precision"], na.rm = TRUE)
+    macro_recall <- mean(cm$byClass[, "Recall"], na.rm = TRUE)
+    bal_acc <- mean(cm$byClass[, "Balanced Accuracy"], na.rm = TRUE)
+    macro_sens <- mean(cm$byClass[, "Sensitivity"], na.rm = TRUE)
+    macro_spec <- mean(cm$byClass[, "Specificity"], na.rm = TRUE)
+    
+    summary_list[[length(summary_list) + 1]] <- data.frame(
+      GeneSet = gene_set_name,
+      Model = model_name,
+      Accuracy = round(acc, 4),
+      MacroF1 = round(macro_f1, 4),
+      MacroPrecision = round(macro_precision, 4),
+      MacroRecall = round(macro_recall, 4),
+      BalancedAccuracy = round(bal_acc, 4),
+      MacroSensitivity = round(macro_sens, 4),
+      MacroSpecificity = round(macro_spec, 4),
+      Kappa = round(kappa, 4)
+    )
+    
+    cat("\n======", gene_set_name, "-", model_name, "======\n")
+    print(cm$table)
+    cat("Test Accuracy:", round(acc, 3), 
+        "| Kappa:", round(kappa, 3), 
+        "| Macro F1:", round(macro_f1, 3), 
+        "| Precision:", round(macro_precision, 3), 
+        "| Recall:", round(macro_recall, 3),
+        "| Sensitivity:", round(macro_sens, 3),
+        "| Specificity:", round(macro_spec, 3),
+        "| Balanced Accuracy:", round(bal_acc, 3), "\n")
+  }
+}
+
+acc_df <- do.call(rbind, acc_list)
+summary_df <- do.call(rbind, summary_list)
+desired_order <- c("top30", "top50", "top80", "top110")
+acc_df$GeneSet <- factor(acc_df$GeneSet, levels = desired_order)
+summary_df$GeneSet <- factor(summary_df$GeneSet, levels = desired_order)
+
+# -------- Plot the CV accuracy boxplot --------
+gse17907_cv_plot <- ggplot(acc_df, aes(x = GeneSet, y = Accuracy, fill = Model)) +
+  geom_boxplot(position = position_dodge(0.8), outlier.shape = NA) +
+  geom_jitter(position = position_jitterdodge(jitter.width = 0.2, dodge.width = 0.8), size = 1, alpha = 0.6) +
+  labs(
+    title = "Model Accuracy (Linear selection)",
+    x = "Top Gene Set",
+    y = "Cross-validated Accuracy"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "top")
+
+# -------- Plot the Test evaluation metric bar chart --------
+eval_long_gse17907 <- pivot_longer(summary_df, 
+                          cols = c("Accuracy", "MacroF1", "MacroPrecision", "MacroRecall", "MacroSensitivity", "MacroSpecificity", "BalancedAccuracy", "Kappa"),
+                          names_to = "Metric", values_to = "Value")
+
+gse17907_eval_plot <- ggplot(eval_long_gse17907 , aes(x = GeneSet, y = Value, fill = Model)) +
+  geom_col(position = position_dodge(0.8)) +
+  facet_wrap(~ Metric, scales = "free_y") +
+  labs(
+    title = "Test Set Evaluation: Extended Metrics",
+    x = "Top Gene Set",
+    y = "Metric"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "top")
+gse17907_cv_plot
+gse17907_eval_plot
+```
+
+## dataframe of result for gse17907
+
+```{r}
+gse17907_metrics<- tidyr::pivot_wider(
+  eval_long_gse17907,
+  names_from = Metric,
+  values_from = Value
+)
+gse17907_metrics
+
+gse17907_metrics$Config <- paste(gse17907_metrics$Model, gse17907_metrics$GeneSet, sep = "_")
+
+# Remove duplicated rows just in case (optional but safe)
+gse17907_metrics <- distinct(gse17907_metrics)
+
+# Select top 5 *distinct* models by Balanced Accuracy
+top5 <- gse17907_metrics %>%
+  arrange(desc(BalancedAccuracy)) %>%
+  slice_head(n = 5)
+
+# Reshape to long format for heatmap
+top5_long <- melt(top5, id.vars = c("Model", "GeneSet", "Config"))
+
+# Plot heatmap
+gse17907_heat <- ggplot(top5_long, aes(x = variable, y = Config, fill = value)) +
+  geom_tile(color = "white") +
+  scale_fill_gradient(low = "white", high = "#d07095", name = "Metric Value") +
+  labs(title = "Performance Heatmap of Top 5 Models",
+       x = "Metric",
+       y = "Model (Config)") +
+  theme_minimal(base_size = 14) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+gse17907_heat
+```
+
+## gse15852 code
+
+```{r}
+
+# 1. Expression sets
+expr_list <- list(
+
+  gse15852 = exprs(gse15852)
+)
+
+# 2. Phenotype sets
+pdata_list <- list(
+  pdata15852
+)
+
+# 3. Fix phenotype rownames using geo_accession if present
+pdata_list <- lapply(pdata_list, function(p) {
+  if ("geo_accession" %in% colnames(p)) {
+    rownames(p) <- p$geo_accession
+  }
+  return(p)
+})
+
+# Reassign corrected pdata
+
+# 1. Assign pdata
+pdata15852 <- pdata_list[[1]]
+
+
+# 2. Create pheno_list with dataset names
+pheno_list <- list(
+  gse15852 = pdata15852
+)
+
+# 3. Extract grade list and track batch
+grade_list <- Map(function(expr, pheno, batch_name) {
+  sample_names <- colnames(expr)
+  matched_pheno <- pheno[sample_names, , drop = FALSE]
+  grades <- matched_pheno$grade
+  names(grades) <- sample_names
+  # Track batch
+  data.frame(
+    sample = sample_names,
+    grade = grades,
+    batch = batch_name,
+    stringsAsFactors = FALSE
+  )
+}, expr_list, pheno_list, names(pheno_list))
+
+# 4. Combine all grade + batch info into metadata
+metadata <- do.call(rbind, grade_list)
+
+# 5. Clean sample names to remove prefixes (e.g., "gse10810.")
+metadata$sample <- sub(".*\\.", "", metadata$sample)
+
+# 6. Combine expression matrices
+expr_dfs <- lapply(expr_list, function(mat) {
+  df <- as.data.frame(mat)
+  df$gene <- rownames(mat)
+  df
+})
+
+merged_expr <- Reduce(function(x, y) full_join(x, y, by = "gene"), expr_dfs)
+rownames(merged_expr) <- merged_expr$gene
+merged_expr$gene <- NULL
+
+# 7. Ensure metadata matches expression matrix columns
+colnames(merged_expr) <- sub(".*\\.", "", colnames(merged_expr))  # Match cleaned sample names
+metadata <- metadata[match(colnames(merged_expr), metadata$sample), ]
+
+# 8. Final check
+stopifnot(all(metadata$sample == colnames(merged_expr)))
+
+# ✅ Outputs
+metadata
+```
+
+```{r}
+filter_low_expression <- function(expr_data, median_threshold = 5, sd_threshold = 0.5, filter_median = TRUE, filter_sd = TRUE) {
+  # expr_data: expression matrix (genes x samples) or ExpressionSet object
+  # median_threshold: genes with median expression below this will be filtered out
+  # sd_threshold: genes with SD below this will be filtered out
+  # filter_median: whether to filter by median expression
+  # filter_sd: whether to filter by standard deviation (variance)
+  
+  # If input is ExpressionSet, extract expression matrix
+  if (class(expr_data)[1] == "ExpressionSet") {
+    exprs_mat <- exprs(expr_data)
+  } else if (is.matrix(expr_data) || is.data.frame(expr_data)) {
+    exprs_mat <- as.matrix(expr_data)
+  } else {
+    stop("expr_data must be an ExpressionSet or a matrix/data.frame")
+  }
+  
+  keep_median <- rep(TRUE, nrow(exprs_mat))
+  keep_sd <- rep(TRUE, nrow(exprs_mat))
+  
+  if (filter_median) {
+    keep_median <- apply(exprs_mat, 1, median) > median_threshold
+  }
+  if (filter_sd) {
+    keep_sd <- apply(exprs_mat, 1, sd) > sd_threshold
+  }
+  
+  keep <- keep_median & keep_sd
+  
+  # Filter the expression matrix or ExpressionSet accordingly
+  if (class(expr_data)[1] == "ExpressionSet") {
+    filtered <- expr_data[keep, ]
+  } else {
+    filtered <- exprs_mat[keep, , drop = FALSE]
+  }
+  
+  return(filtered)
+}
+
+```
+
+```{r}
+merged_expr <- filter_low_expression(merged_expr, median_threshold = 5, sd_threshold = 0.5)
+dim(merged_expr)
+```
+
+```{r}
+
+
+metadata <- metadata[!is.na(metadata$grade), ]
+metadata
+# 🧼 Remove corresponding columns from merged_expr
+gse10810 <- merged_expr[, metadata$sample]
+anyNA(merged_expr)
+sum(is.na(merged_expr))
+merged_expr <- merged_expr[complete.cases(merged_expr), ]
+merged_expr
+
+table(metadata$grade)
+```
+
+```{r}
+RNGkind(kind = "L'Ecuyer-CMRG")
+set.seed(123)
+split_by_grade <- split(metadata, metadata$grade)
+
+train_samples <- unlist(lapply(split_by_grade, function(df) {
+  n <- nrow(df)
+  if (n >= 2) {
+    sample(df$sample, size = floor(0.8 * n))  
+  } else {
+    sample(df$sample, size = 1)  
+  }
+}))
+
+test_samples <- setdiff(metadata$sample, train_samples)
+
+# ========== 6. Extract the expression matrix and metadata ==========
+expr_train <- merged_expr[, train_samples]
+expr_test  <- merged_expr[, test_samples]
+
+metadata_train <- metadata[match(train_samples, metadata$sample), ]
+metadata_test  <- metadata[match(test_samples, metadata$sample), ]
+
+metadata_train$grade <- factor(metadata_train$grade,
+                               levels = c("Normal", "Grade1", "Grade2", "Grade3"))
+metadata_test$grade <- factor(metadata_test$grade,
+                              levels = c("Normal", "Grade1", "Grade2", "Grade3"))
+
+levels(metadata_train$grade) <- make.names(levels(metadata_train$grade))
+levels(metadata_test$grade)  <- make.names(levels(metadata_test$grade))
+
+
+cat("Training set grade counts:\n")
+print(table(metadata_train$grade))
+cat("Test set grade counts:\n")
+print(table(metadata_test$grade))
+
+expr_balanced <- expr_train
+
+```
+
+```{r}
+# Feature Selection on SMOTE-balanced Data
+labels_factor <- factor(metadata_train$grade, levels = c("Normal", "Grade1", "Grade2", "Grade3"))
+design <- model.matrix(~ 0 + labels_factor)
+colnames(design) <- levels(labels_factor)
+
+fit <- lmFit(expr_balanced, design)
+fit <- eBayes(fit)
+res <- topTable(fit, number = Inf, adjust.method = "BH")
+
+# Significant genes (adjusted p < 0.05)
+sig_genes <- rownames(subset(res, adj.P.Val < 0.05))
+
+# Group means and strong difference filtering (max - min > 1)
+group_means <- sapply(levels(labels_factor), function(lv) {
+  rowMeans(expr_balanced[, metadata_train$grade == lv, drop = FALSE])
+})
+expr_diff <- apply(group_means, 1, function(x) max(x) - min(x))
+sig_genes_strong <- sig_genes[expr_diff[sig_genes] > 1]
+
+# Sort by adjusted p-value
+res_sig_strong <- res[sig_genes_strong, ]
+res_sig_strong <- res_sig_strong[order(res_sig_strong$adj.P.Val), ]
+
+# Build top gene sets only if enough genes exist
+top_gene_sets <- list()
+if (nrow(res_sig_strong) >= 30)  top_gene_sets$top30  <- rownames(res_sig_strong)[1:30]
+if (nrow(res_sig_strong) >= 50)  top_gene_sets$top50  <- rownames(res_sig_strong)[1:50]
+if (nrow(res_sig_strong) >= 80)  top_gene_sets$top80  <- rownames(res_sig_strong)[1:80]
+if (nrow(res_sig_strong) >= 110) top_gene_sets$top110 <- rownames(res_sig_strong)[1:110]
+
+# Optional: show available gene set sizes
+cat("Available gene sets:\n")
+print(names(top_gene_sets))
+
+```
+
+```{r}
+# Feature Selection on SMOTE-balanced Data
+labels_factor <- factor(metadata_train$grade, levels = c("Normal", "Grade1", "Grade2", "Grade3"))
+design <- model.matrix(~ 0 + labels_factor)
+colnames(design) <- levels(labels_factor)
+
+fit <- lmFit(expr_balanced, design)
+fit <- eBayes(fit)
+res <- topTable(fit, number = Inf, adjust.method = "BH")
+
+# Significant genes (adjusted p < 0.05)
+sig_genes <- rownames(subset(res, adj.P.Val < 0.05))
+
+# Group means and strong difference filtering (max - min > 1)
+group_means <- sapply(levels(labels_factor), function(lv) {
+  rowMeans(expr_balanced[, metadata_train$grade == lv, drop = FALSE])
+})
+expr_diff <- apply(group_means, 1, function(x) max(x) - min(x))
+sig_genes_strong <- sig_genes[expr_diff[sig_genes] > 1]
+
+# Sort by adjusted p-value
+res_sig_strong <- res[sig_genes_strong, ]
+res_sig_strong <- res_sig_strong[order(res_sig_strong$adj.P.Val), ]
+
+# Build top gene sets only if enough genes exist
+top_gene_sets <- list()
+if (nrow(res_sig_strong) >= 30)  top_gene_sets$top30  <- rownames(res_sig_strong)[1:30]
+if (nrow(res_sig_strong) >= 50)  top_gene_sets$top50  <- rownames(res_sig_strong)[1:50]
+if (nrow(res_sig_strong) >= 80)  top_gene_sets$top80  <- rownames(res_sig_strong)[1:80]
+if (nrow(res_sig_strong) >= 110) top_gene_sets$top110 <- rownames(res_sig_strong)[1:110]
+
+# Optional: show available gene set sizes
+cat("Available gene sets:\n")
+print(names(top_gene_sets))
+
+```
+
+```{r}
+library(caret)
+library(ggplot2)
+library(tidyr)
+
+set.seed(123)
+results <- list()
+cv_folds <- 5  
+
+# ----------------- Create reproducible seeds -----------------
+generate_seed_list <- function(num_resamples, max_tune_length) {
+  set.seed(123)
+  seed_list <- vector(mode = "list", length = num_resamples + 1)
+  for (i in 1:num_resamples) {
+    seed_list[[i]] <- sample.int(1e6, max_tune_length)
+  }
+  seed_list[[num_resamples + 1]] <- sample.int(1e6, 1)
+  return(seed_list)
+}
+
+svm_grid <- data.frame(C = 1)
+knn_grid <- expand.grid(k = 5:10)
+rf_grid <- expand.grid(mtry = floor(sqrt(ncol(expr_train))))
+max_tune_length <- max(nrow(svm_grid), nrow(knn_grid), nrow(rf_grid))
+seeds <- generate_seed_list(cv_folds, max_tune_length)
+
+# ----------------- Begin training loop -----------------
+y_train <- as.factor(metadata_train$grade)
+levels(y_train) <- make.names(levels(y_train))
+y_test <- make.names(metadata_test$grade)
+
+acc_list <- list()        
+summary_list <- list()     
+
+for (gene_set_name in names(top_gene_sets)) {
+  
+  gene_set <- top_gene_sets[[gene_set_name]]
+  x_train <- t(expr_train[gene_set, , drop = FALSE])
+  x_test  <- t(expr_test[gene_set, , drop = FALSE])
+  
+  trctrl <- trainControl(
+    method = "cv",
+    number = cv_folds,
+    classProbs = TRUE,
+    savePredictions = "final",
+    seeds = seeds
+  )
+  
+  # Model training
+  svm_mod <- train(x = x_train, y = y_train, method = "svmLinear", trControl = trctrl, tuneGrid = svm_grid)
+  knn_mod <- train(x = x_train, y = y_train, method = "knn", trControl = trctrl, tuneGrid = knn_grid)
+  rf_mod  <- train(x = x_train, y = y_train, method = "rf",  trControl = trctrl, tuneGrid = rf_grid, ntree = 100)
+  
+  # ---------- Save CV results ----------
+  acc_list[[length(acc_list) + 1]] <- data.frame(GeneSet = gene_set_name, Model = "SVM", Accuracy = svm_mod$resample$Accuracy)
+  acc_list[[length(acc_list) + 1]] <- data.frame(GeneSet = gene_set_name, Model = "KNN", Accuracy = knn_mod$resample$Accuracy)
+  acc_list[[length(acc_list) + 1]] <- data.frame(GeneSet = gene_set_name, Model = "RF",  Accuracy = rf_mod$resample$Accuracy)
+  
+  # ---------- Test set evaluation ----------
+  test_preds <- list(
+    SVM = predict(svm_mod, x_test),
+    KNN = predict(knn_mod, x_test),
+    RF  = predict(rf_mod,  x_test)
+  )
+  
+  for (model_name in names(test_preds)) {
+    pred <- factor(test_preds[[model_name]], levels = unique(y_test))
+    truth <- factor(y_test, levels = unique(y_test))
+    cm <- confusionMatrix(pred, truth)
+    
+    acc <- cm$overall["Accuracy"]
+    kappa <- cm$overall["Kappa"]
+    macro_f1 <- mean(cm$byClass[, "F1"], na.rm = TRUE)
+    macro_precision <- mean(cm$byClass[, "Precision"], na.rm = TRUE)
+    macro_recall <- mean(cm$byClass[, "Recall"], na.rm = TRUE)
+    bal_acc <- mean(cm$byClass[, "Balanced Accuracy"], na.rm = TRUE)
+    macro_sens <- mean(cm$byClass[, "Sensitivity"], na.rm = TRUE)
+    macro_spec <- mean(cm$byClass[, "Specificity"], na.rm = TRUE)
+    
+    summary_list[[length(summary_list) + 1]] <- data.frame(
+      GeneSet = gene_set_name,
+      Model = model_name,
+      Accuracy = round(acc, 4),
+      MacroF1 = round(macro_f1, 4),
+      MacroPrecision = round(macro_precision, 4),
+      MacroRecall = round(macro_recall, 4),
+      BalancedAccuracy = round(bal_acc, 4),
+      MacroSensitivity = round(macro_sens, 4),
+      MacroSpecificity = round(macro_spec, 4),
+      Kappa = round(kappa, 4)
+    )
+    
+    cat("\n======", gene_set_name, "-", model_name, "======\n")
+    print(cm$table)
+    cat("Test Accuracy:", round(acc, 3), 
+        "| Kappa:", round(kappa, 3), 
+        "| Macro F1:", round(macro_f1, 3), 
+        "| Precision:", round(macro_precision, 3), 
+        "| Recall:", round(macro_recall, 3),
+        "| Sensitivity:", round(macro_sens, 3),
+        "| Specificity:", round(macro_spec, 3),
+        "| Balanced Accuracy:", round(bal_acc, 3), "\n")
+  }
+}
+
+acc_df <- do.call(rbind, acc_list)
+summary_df <- do.call(rbind, summary_list)
+desired_order <- c("top30", "top50", "top80", "top110")
+acc_df$GeneSet <- factor(acc_df$GeneSet, levels = desired_order)
+summary_df$GeneSet <- factor(summary_df$GeneSet, levels = desired_order)
+
+# -------- Plot the CV accuracy boxplot --------
+gse15852_cv_plot <- ggplot(acc_df, aes(x = GeneSet, y = Accuracy, fill = Model)) +
+  geom_boxplot(position = position_dodge(0.8), outlier.shape = NA) +
+  geom_jitter(position = position_jitterdodge(jitter.width = 0.2, dodge.width = 0.8), size = 1, alpha = 0.6) +
+  labs(
+    title = "Model Accuracy (Linear selection)",
+    x = "Top Gene Set",
+    y = "Cross-validated Accuracy"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "top")
+
+# -------- Plot the Test evaluation metric bar chart --------
+eval_long_gse15852 <- pivot_longer(summary_df, 
+                          cols = c("Accuracy", "MacroF1", "MacroPrecision", "MacroRecall", "MacroSensitivity", "MacroSpecificity", "BalancedAccuracy", "Kappa"),
+                          names_to = "Metric", values_to = "Value")
+
+gse15852_eval_plot <- ggplot(eval_long_gse15852 , aes(x = GeneSet, y = Value, fill = Model)) +
+  geom_col(position = position_dodge(0.8)) +
+  facet_wrap(~ Metric, scales = "free_y") +
+  labs(
+    title = "Test Set Evaluation: Extended Metrics",
+    x = "Top Gene Set",
+    y = "Metric"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "top")
+gse15852_cv_plot
+gse15852_eval_plot
+
+```
+
+## dataframe of result for gse15852
+
+```{r}
+gse15852_metrics<- tidyr::pivot_wider(
+  eval_long_gse15852 ,
+  names_from = Metric,
+  values_from = Value
+)
+gse15852_metrics
+
+gse15852_metrics$Config <- paste(gse15852_metrics$Model, gse15852_metrics$GeneSet, sep = "_")
+
+# Select top 5 models by Balanced Accuracy
+top5 <- gse15852_metrics %>%
+  arrange(desc(BalancedAccuracy)) %>%
+  head(5)
+
+# Reshape to long format for heatmap
+top5_long <- melt(top5, id.vars = c("Model", "GeneSet", "Config"))
+
+# Plot heatmap
+gse15852_heat <- ggplot(top5_long, aes(x = variable, y = Config, fill = value)) +
+  geom_tile(color = "white") +
+  scale_fill_gradient(low = "white", high = "#d07095", name = "Metric Value") +
+  labs(title = "Performance Heatmap of Top 5 Models",
+       x = "Metric",
+       y = "Model (Config)") +
+  theme_minimal(base_size = 14) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+gse15852_heat
+```
+
+## boxplot
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+
+combine_metrics$Dataset <- "Combined"
+gse17907_metrics$Dataset <- "GSE17907"
+gse15852_metrics$Dataset <- "GSE15852"
+
+all_metrics <- bind_rows(combine_metrics, gse17907_metrics, gse15852_metrics)
+
+metrics_long <- all_metrics %>%
+  dplyr::select(Dataset, Model, GeneSet, BalancedAccuracy, MacroF1) %>%
+  pivot_longer(cols = c("BalancedAccuracy", "MacroF1"),
+               names_to = "Metric", values_to = "Value")
+
+
+boxplot_plot <- ggplot(metrics_long, aes(x = Model, y = Value, fill = Dataset)) +
+  geom_boxplot(outlier.shape = NA, alpha = 0.7, position = position_dodge(0.8)) +
+  facet_wrap(~ Metric, scales = "free_y") +
+  labs(title = "Model Comparison",
+       y = "Metric Value",
+       x = "Model") +
+  theme_minimal(base_size = 14) +
+  theme(
+    legend.position = "top",
+    plot.title = element_text(hjust = 0.5)
+  ) +
+  scale_fill_manual(values = c("Combined" = "#F8AFA6",
+                               "GSE17907" = "#c8b0d8",
+                               "GSE15852" = "#d07095"))
+
+
+boxplot_plot
+```
+
+# Appendix B: Images of Shiny app

@@ -1,0 +1,147 @@
+/* === Header 区域整体居中对齐 === */
+.custom-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;  /* 整体居中 */
+  gap: 15px;
+  margin-bottom: 2em;
+  flex-wrap: wrap;
+}
+
+/* === Logo 样式 === */
+.custom-logo {
+  height: 60px;
+  width: auto;
+  max-width: 80px;
+}
+
+/* === 标题和作者区域紧贴 logo === */
+.custom-title-block {
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+/* === 主标题样式 === */
+.custom-title {
+  font-size: 1.8em;
+  font-weight: bold;
+  color: #D07095;
+  margin: 0;
+}
+
+/* === 作者样式 === */
+.custom-author {
+  font-weight: bold;
+  font-size: 1em;
+  margin-top: 0.3em;
+}
+
+
+a {
+  color: #D07095;
+  text-decoration: none;
+}
+
+
+a:hover {
+  color: #785D84;
+  text-decoration: underline;
+}
+
+
+a:visited {
+  color: #D07095;
+}
+
+/* === TOC 标题样式（Table of contents）加大字号 === */
+.sidebar-title {
+  color: #D07095 !important;
+  font-weight: bold;
+  font-size: 1.5em;
+  margin-bottom: 0.8em;
+}
+
+/* === 默认状态：目录链接黑色，不是蓝色 === */
+nav[role="doc-toc"] .nav-link {
+  color: #444 !important;
+  font-size: 1em;
+  text-decoration: none !important;
+}
+
+/* === 悬停状态：仅文字加边框，数字保持干净 === */
+nav[role="doc-toc"] .nav-link:hover {
+  color: #D07095 !important;
+  background-color: #FAD5DD !important;
+  border: none !important;
+  border-radius: 4px !important;
+  box-shadow: none !important;
+  font-weight: bold;
+  text-decoration: none !important;
+  padding-left: 0 !important;
+}
+
+/* === 只给文字（strong）加左边框，数字（span）不受影响 === */
+nav[role="doc-toc"] .nav-link:hover strong {
+  border-left: 4px solid #D07095;
+  padding-left: 6px;
+  color: #D07095 !important;
+}
+
+/* === 选中状态：粉背景 + 白字 + 左边框 === */
+nav[role="doc-toc"] .nav-link.active,
+nav[role="doc-toc"] .nav-link.active:focus,
+nav[role="doc-toc"] .nav-link.active:visited,
+nav[role="doc-toc"] .nav-link.active:focus-visible {
+  background-color: #E3A5B2 !important;
+  color: white !important;
+  font-weight: bold;
+  border-radius: 6px;
+  border-left: 4px solid #D07095;
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+/* === 选中状态：数字和标题也变白 === */
+nav[role="doc-toc"] .nav-link.active span,
+nav[role="doc-toc"] .nav-link.active strong {
+  color: white !important;
+  font-weight: bold;
+}
+
+/* === 选中状态下所有子元素都变白，防止漏掉 === */
+nav[role="doc-toc"] .nav-link.active *,
+nav[role="doc-toc"] .nav-link:focus *,
+nav[role="doc-toc"] .nav-link:focus-visible * {
+  color: white !important;
+}
+
+/* 强制选中目录项标题变白，包括链接本身 */
+nav[role="doc-toc"] .nav-link.active,
+nav[role="doc-toc"] .nav-link.active strong,
+nav[role="doc-toc"] .nav-link.active span,
+nav[role="doc-toc"] .nav-link.active a {
+  color: white !important;
+  font-weight: bold;
+}
+
+/* 如果还有 hover 或 focus 时颜色跳回蓝色，也覆盖掉 */
+nav[role="doc-toc"] .nav-link.active:hover,
+nav[role="doc-toc"] .nav-link.active:focus,
+nav[role="doc-toc"] .nav-link.active:visited,
+nav[role="doc-toc"] .nav-link.active:focus-visible,
+nav[role="doc-toc"] .nav-link.active:hover strong,
+nav[role="doc-toc"] .nav-link.active:hover a {
+  color: white !important;
+}
+
+/* === 强力覆盖 Quarto/Bootstrap 自动更新的活动链接样式 === */
+nav[role="doc-toc"] .nav-link.active strong,
+nav[role="doc-toc"] .nav-link.active a,
+nav[role="doc-toc"] .nav-link.active a:link,
+nav[role="doc-toc"] .nav-link.active a:visited {
+  color: white !important;
+  font-weight: bold;
+}
+

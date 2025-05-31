@@ -85,61 +85,13 @@ ggplot(top5_long, aes(x = variable, y = Config, fill = value)) +
 
 ```
 
-# Best Model – RF110
+# Best Model – SVM with top 110 genes
 
-**Best Macro F1 Score (0.654)**
+-   This model achieves the highest Accuracy (0.667) and Kappa (0.481), indicating strong predictive performance and reliable agreement beyond chance.
 
--   RF110 demonstrates balanced performance across all classes
+-   It also has the highest Balanced Accuracy (0.667), meaning it maintains good sensitivity and specificity balance.
 
--   Normal, Grade1, Grade2, and Grade3.
-
--   Since Macro F1 treats all classes equally, a score of 0.654 indicates that RF110 doesn’t overly favor one class and handles class imbalance moderately well.
-
-**High Accuracy (0.571)**
-
--   RF110 correctly predicted the class in nearly 57% of test cases.
-
--   While not the highest overall, this is competitive and still meaningful given the complexity of multiclass classification in biomedical data.
-
-**Solid Balanced Accuracy (0.646)**
-
--   Balanced Accuracy is the average of sensitivity and specificity.
-
--   RF110 achieves a good balance — it's fairly effective at both detecting real positives and minimizing false alarms, which is important in clinical settings.
-
-**Moderate Kappa Score (0.366)**
-
--   A kappa score of 0.366 shows moderate agreement with the true class labels beyond random chance.
-
--   This suggests RF110 is more reliable than guessing and captures meaningful patterns in the data.
-
-**Decent Precision (0.435)**
-
--   When RF110 predicts a certain class, it is correct about 44% of the time.
-
--   This level of precision helps reduce false positives, though there’s room for improvement in high-stakes contexts.
-
-**Fair Recall (0.45)**
-
--   RF110 identifies 45% of actual positive cases a fair result for multiclass classification.
-
--   This helps ensure that many true cases are detected, a priority in healthcare to avoid missed diagnoses.
-
-**High Specificity (0.842)**
-
--   RF110 accurately identifies many of the negative cases (e.g., normal tissue).
-
--   This reduces unnecessary follow-up tests or interventions, especially valuable when screening large populations.
-
-**Why RF110 is the Best Overall**
-
--   Among all models tested, RF110 delivers the best trade-off between Macro F1, balanced accuracy, and specificity.
-
--   Its strong specificity and decent recall make it suitable for reducing false positives while still identifying true cases.
-
--   While not excelling in all areas, it provides the most balanced and reliable performance across metrics for a challenging multiclass problem.
-
--   This makes RF110 a practical candidate model, especially when precision and specificity are key priorities in medical classification.
+-   Although some models have higher Macro F1 (e.g., SVM at 30 genes with 0.75), the overall combination of metrics favors the SVM with 110 genes for consistent and balanced performance.
 
 # GSE17907 findings summary
 
@@ -213,58 +165,17 @@ ggplot(top5_long, aes(x = variable, y = Config, fill = value)) +
 
 ```
 
-# Best Model – KNN (Top30/50/80 genes) 
+# Best Model – KNN or RF across multiple gene sets (30, 50, 80, 110 genes)
 
-**Strong Accuracy (0.667)**
+-   These models consistently achieve the highest Accuracy of 0.667.
 
--   Correctly predicts 2 out of every 3 cases.
+-   They have the highest Kappa values (0.262) in this dataset, indicating moderate agreement beyond chance.
 
--   Among the top-performing models on this dataset.
+-   They maintain strong Macro F1 scores (0.722), showing a good balance between precision and recall.
 
-**Highest Kappa (0.360)**
+-   Their Balanced Accuracy of 0.588 suggests reasonable performance on both positive and negative classes.
 
--   Shows strong agreement between predictions and actual grades beyond random chance.
-
--   Demonstrates reliability in classification.
-
-**Good Macro F1 Score (0.639)**
-
--   Balanced performance across all breast cancer grades.
-
--   Ensures no grade is consistently misclassified — important for equitable diagnostics.
-
-**High Precision (0.722)**
-
--   When KNN predicts a grade, it's often correct.
-
--   Reduces false positives, helping avoid unnecessary or incorrect treatments.
-
-**Reasonable Recall (0.464)**
-
--   Detects about 46% of actual positive cases.
-
--   While not the highest, it outperforms SVM and RF in this dataset.
-
-**Highest Specificity (0.825)**
-
--   Very effective at ruling out negatives.
-
--   Crucial for avoiding overtreatment or mislabeling healthy patients.
-
-**Best Balanced Accuracy (0.645)**
-
--   Harmonizes recall and specificity for an unbiased perspective.
-
--   Indicates dependable performance across both positive and negative classes.
-
-**Why KNN is Best for GSE17907**
-
--   Outperforms SVM and Random Forest across nearly all key metrics.
-
--   Offers the best trade-off between sensitivity and specificity.
-
--   Especially valuable in a medical setting due to its high precision and specificity.
-    # GSE1582 findings summary
+Although the SVM models occasionally have decent Macro F1, their lower accuracy and Kappa values indicate less reliable overall performance.
 
 ```{r}
 library(ggplot2)
@@ -333,40 +244,10 @@ ggplot(top5_long, aes(x = variable, y = Config, fill = value)) +
 
 ```
 
-# Best Model – SVM (Top110 Genes) 
+# Best Model – SVM with top 110 genes 
 
-**Strong Accuracy (0.684)**
+-   This model achieves the highest Accuracy (0.579) and Kappa (0.321) values in this dataset, indicating the strongest agreement beyond chance.
 
--   Correctly classifies approximately 68% of samples, showing solid overall performance on this dataset.
+-   It also has the highest Balanced Accuracy (0.626), which means it handles class imbalance better than others.
 
-**Highest Kappa (0.477)**
-
--   Indicates moderate agreement beyond chance between predicted and true grades, demonstrating reliable classification.
-
-**Strong Macro F1 Score (0.731)**
-
--   Maintains a good balance of precision and recall across all classes, ensuring fair performance for each grade level.
-
-**Highest Precision (0.788)**
-
--   When SVM predicts a grade, it's correct nearly 79% of the time, minimizing false positives—a critical factor in clinical decision-making.
-
-**Moderate Recall (0.539)**
-
--   Captures about 54% of actual positive cases, reflecting reasonable sensitivity while avoiding excessive false positives.
-
-**Top Specificity (0.857)**
-
--   Very effective at correctly identifying negative cases, reducing the likelihood of misclassifying healthy patients as having cancer.
-
-**Best Balanced Accuracy (0.698)**
-
--   Averages recall and specificity well, showing the model is not biased toward any particular class and performs well across the board.
-
-**Why SVM Is Best for GSE15852**
-
--   Outperforms KNN and Random Forest on most metrics, especially in precision, specificity, and balanced accuracy.
-
--   Consistent and robust performance using the largest gene set evaluated.
-
--   Offers the ideal trade-off between missing true cases and over-diagnosing, which is essential in medical diagnostics.
+-   While the KNN model at 80 genes has the highest Macro F1 (0.783), it falls behind in accuracy and balanced accuracy, suggesting less consistent performance.
