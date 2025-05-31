@@ -1,6 +1,7 @@
 ---
-title: ""  
-author: "Devanshi Mirchandani (520123283), Yingshan(Dorothea) Gao(530074557), Weihao Cheng (530086446), Tommi Smits (520487200) and Hamish Sultana ()"
+title: "Preva – Breast Cancer Risk Calculator"  
+title-block-style: plain
+author: ""  
 
 format:
   html:
@@ -11,8 +12,19 @@ format:
     toc-location: right
     code-fold: true
     number-sections: true
-    include-in-header: logo.html  
 ---
+
+**Authors:**  
+Devanshi Mirchandani (520123283)  
+Yingshan (Dorothea) Gao (530074557)  
+Weihao Cheng (530086446)  
+Tommi Smits (520487200)  
+Hamish Sultana  
+
+**Date:** 1 June 2025  
+**Location:** The University of Sydney  
+**GitHub:** [Github.com/data3888-group07/Preva](https://github.com/devanshimirchandani/data3888-group07)
+
 
 # Executive Summary
 

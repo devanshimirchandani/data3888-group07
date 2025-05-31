@@ -144,3 +144,41 @@ nav[role="doc-toc"] .nav-link.active a:visited {
   font-weight: bold;
 }
 
+.quarto-title .title {
+  font-size: 28px;
+  font-weight: 700;
+  color: #D07095;
+  font-family: Poppins, sans-serif;
+}
+
+
+h1 {
+  font-size: 24px;
+  font-weight: 700;
+  color: #333;
+  border-bottom: 2px solid #D07095;
+  padding-bottom: 6px;
+  margin-top: 30px !important;
+  margin-bottom: 15px;
+  font-family: Poppins, sans-serif;
+}
+
+
+h2 {
+  font-size: 21px;
+  font-weight: 700;
+  color: #D07095;
+  margin-top: 25px !important;
+  margin-bottom: 12px;
+  font-family: Poppins, sans-serif;
+}
+
+
+h3 {
+  font-size: 18px;
+  font-weight: 600;
+  color: #785D84;
+  margin-top: 20px !important;
+  margin-bottom: 8px;
+  font-family: Poppins, sans-serif;
+}
