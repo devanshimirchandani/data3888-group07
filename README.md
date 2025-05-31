@@ -17,7 +17,7 @@ Module 4: Risk Evaluation & Interpretation
 
 ## Repository Structure
 
-- **Shiny/**
+### **Shiny/**
 Contains the full Shiny application, including UI, server logic, and pre-processed data used in the app.
 
 Key components:
@@ -46,13 +46,13 @@ Key components:
 
   * [`Record_Demo.mp4`](./Shiny/Record_Demo.mp4) — A recorded demo of the app in use (local video file).
 
-- **Report/**
+### **Report/**
   
   Contains the final report and the R Markdown code to reproduce all plots included in the report. Key files:
   - `report_plot.RData` — saved plots for report
   - report scripts and documentation
 
-- **Pre-Project/**
+### **Pre-Project/**
   
   Contains our earlier work, including preliminary data exploration and initial Shiny app drafts. Useful for understanding our iterative workflow.
 
