@@ -1,0 +1,146 @@
+.custom-header {
+  display: flex;
+  align-items: center;
+  justify-content: center; 
+  gap: 15px;
+  margin-bottom: 2em;
+  flex-wrap: wrap;
+}
+
+
+.custom-logo {
+  height: 60px;
+  width: auto;
+  max-width: 80px;
+}
+
+
+.custom-title-block {
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+
+.custom-title {
+  font-size: 1.8em;
+  font-weight: bold;
+  color: #D07095;
+  margin: 0;
+}
+
+
+.custom-author {
+  font-weight: bold;
+  font-size: 1em;
+  margin-top: 0.3em;
+}
+
+
+a {
+  color: #D07095;
+  text-decoration: none;
+}
+
+
+a:hover {
+  color: #785D84;
+  text-decoration: underline;
+}
+
+
+a:visited {
+  color: #D07095;
+}
+
+
+.sidebar-title {
+  color: #D07095 !important;
+  font-weight: bold;
+  font-size: 1.5em;
+  margin-bottom: 0.8em;
+}
+
+
+nav[role="doc-toc"] .nav-link {
+  color: #444 !important;
+  font-size: 1em;
+  text-decoration: none !important;
+}
+
+
+nav[role="doc-toc"] .nav-link:hover {
+  color: #D07095 !important;
+  background-color: #FAD5DD !important;
+  border: none !important;
+  border-radius: 4px !important;
+  box-shadow: none !important;
+  font-weight: bold;
+  text-decoration: none !important;
+  padding-left: 0 !important;
+}
+
+
+nav[role="doc-toc"] .nav-link:hover strong {
+  border-left: 4px solid #D07095;
+  padding-left: 6px;
+  color: #D07095 !important;
+}
+
+
+nav[role="doc-toc"] .nav-link.active,
+nav[role="doc-toc"] .nav-link.active:focus,
+nav[role="doc-toc"] .nav-link.active:visited,
+nav[role="doc-toc"] .nav-link.active:focus-visible {
+  background-color: #E3A5B2 !important;
+  color: white !important;
+  font-weight: bold;
+  border-radius: 6px;
+  border-left: 4px solid #D07095;
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+
+nav[role="doc-toc"] .nav-link.active span,
+nav[role="doc-toc"] .nav-link.active strong {
+  color: white !important;
+  font-weight: bold;
+}
+
+
+nav[role="doc-toc"] .nav-link.active *,
+nav[role="doc-toc"] .nav-link:focus *,
+nav[role="doc-toc"] .nav-link:focus-visible * {
+  color: white !important;
+}
+
+
+nav[role="doc-toc"] .nav-link.active,
+nav[role="doc-toc"] .nav-link.active strong,
+nav[role="doc-toc"] .nav-link.active span,
+nav[role="doc-toc"] .nav-link.active a {
+  color: white !important;
+  font-weight: bold;
+}
+
+
+nav[role="doc-toc"] .nav-link.active:hover,
+nav[role="doc-toc"] .nav-link.active:focus,
+nav[role="doc-toc"] .nav-link.active:visited,
+nav[role="doc-toc"] .nav-link.active:focus-visible,
+nav[role="doc-toc"] .nav-link.active:hover strong,
+nav[role="doc-toc"] .nav-link.active:hover a {
+  color: white !important;
+}
+
+
+nav[role="doc-toc"] .nav-link.active strong,
+nav[role="doc-toc"] .nav-link.active a,
+nav[role="doc-toc"] .nav-link.active a:link,
+nav[role="doc-toc"] .nav-link.active a:visited {
+  color: white !important;
+  font-weight: bold;
+}
+
