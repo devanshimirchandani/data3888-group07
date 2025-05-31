@@ -1,23 +1,25 @@
 <p align="center">
-  <img src="./Pre-Project/Preva.png" alt="Preva Logo" height="300">
+  <img src="./Pre-Project/Preva.png" alt="Preva Logo" height="280">
 </p>
 
 # Preva – Breast Cancer Risk Calculator
 ## Project Overview
 Preva is an interactive risk calculator that predicts breast cancer severity from gene expression data.
-This app was developed as a group project for DATA3888 (2025 S1) at the University of Sydney. (data3888-group07)
 
+This app was developed as a group project for DATA3888 (2025 S1) at the University of Sydney.  
 It is designed as a modular educational tool that guides users from raw data to prediction, helping students and learners explore key bioinformatics workflows in a hands-on way.
 
+<p align="center">
+  <img src="./Report/figure1.png" alt="Workflow Diagram" width="700">
+</p>
+
 ## Key Features
-Module 1: Introduction to Breast Cancer & GED
 
-Module 2: Data Upload and Processing (batch correction, resampling, filtering)
+- **Modular Learning Design** — Four guided modules aligned with real-world bioinformatics workflows.
+- **Data Processing Tools** — Interactive UI for uploading, filtering, and correcting gene expression data.
+- **ML Model Integration** — Train and evaluate predictive models (KNN, RF, SVM) on curated datasets.
+- **Educational Visuals** — Embedded quizzes and visual diagrams for reinforcing key concepts.
 
-Module 3: Predictive Model Building (SVM, KNN, RF with tunable parameters)
-
-Module 4: Risk Evaluation & Interpretation
-(Accuracy, F1, Kappa, ROC/AUC, confusion matrix, top genes)
 
 ## Repository Structure
 
@@ -83,9 +85,47 @@ Key components:
   Contains our earlier work, including preliminary data exploration and initial Shiny app drafts. Useful for understanding our iterative workflow.
 
 ## Datasets
+### **Datasets Used**
 
-We used three main microarray datasets:
+We used three publicly available **gene expression microarray datasets** from the NCBI GEO repository, each contributing to the training and evaluation of predictive models in Preva. These datasets include samples from breast cancer patients across different tumor grades and subtypes.
 
-- **Dataset 1**: **GSE15852** — 86 samples, 43 tumors
-- **Dataset 2**: **GSE10810** — 58 samples, 31 tumors
-- **Dataset 3**: **GSE17907** — 55 samples, 47 tumors
+#### **GSE15852**
+
+* **Description:** Gene expression profiles from
+      • 43 **normal** breast tissue samples
+      • 43 **tumor** samples spanning Grades I–III
+* **Usage:** Frequently used in breast cancer subtype classification.
+* **Gene count:** 22,282
+* **NCBI GEO:** [View GSE15852](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE15852)
+
+#### **GSE17907**
+
+* **Description:** Enriched for high-grade cases, includes
+      • 55 **breast cancer** samples
+      • Grade 3 dominant (34 out of 55)
+* **Usage:** Highlights more aggressive tumor phenotypes.
+* **Gene count:** 24,577
+* **NCBI GEO:** [View GSE17907](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE17907)
+
+#### **Combined Dataset (GSE10810 + GSE17907)**
+
+* **Description:**  
+  **GSE10810**: Moderate-size dataset with 31 tumors  
+  **GSE17907**: High-grade enrichment  
+  Combined using batch correction for model generalisation
+
+* **Gene count:** 16,760
+* **Purpose:** Enables training of more robust predictive models through broader sample representation.
+
+
+### **Pre-Processed Format**
+
+All datasets were pre-processed and stored as `.RData` objects:
+
+```r
+GSE15852.RData
+data_GSE17907.RData
+data_GSE10810.RData
+data_Combined.RData
+```
+
