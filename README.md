@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./Pre-Project/Preva.png" alt="Preva Logo" height="280">
+  <img src="./Pre-Project/PrevaLogo.png" alt="Preva Logo" height="280">
 </p>
 
 # Preva – Breast Cancer Risk Calculator
